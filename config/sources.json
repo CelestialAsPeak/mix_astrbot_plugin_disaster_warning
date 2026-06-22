@@ -1,0 +1,1174 @@
+{
+  "_note": "Mix灾害预警插件 — 数据源注册目录。每次 parser 新增/修改时同步更新此文件。",
+  "_field_docs": {
+    "_legend": "以下字段适用于 sources.json 中的每个数据源条目。必填字段以 ★ 标记。",
+    "source_id": "★ 数据源唯一标识。对应 parser/registry.py 中 @ParserRegistry.register('id') 的 id。全局唯一，一经确定不要改名。",
+    "source_type": "★ 领域数据类型。决定该数据源产出哪种事件模型。可选值见 _schema._source_type。",
+    "provider_family": "★ 连接提供方家族。决定该源走哪个连接处理器。可选值见 _schema._provider_family。",
+    "parser_name": "★ 解析器注册名。对应 parser/xxx.py 中 @ParserRegistry.register('name') 的 name。router 根据此值查找解析器。",
+    "presentation_type": "★ 卡片展示类型。message/presenters.py 根据此值选择对应的格式器。",
+    "config_group": "★ 配置父组名。对应 AstrBot 插件配置 JSON 的一级键，如 data_sources.fan_studio。",
+    "config_key": "★ 配置开关 Key。对应 AstrBot 插件配置中该源的启用开关，如 data_sources.fan_studio.china_earthquake_warning。",
+    "priority": "展示优先级。数值越大越优先。同一类型（如多个 EEW 源）中高优先级的排前面。",
+    "display_name": "人类可读的展示名称。用于命令回复、卡片标题等用户可见的地方。",
+    "description": "数据源详细描述。说明该源覆盖范围、数据特点等。",
+    "default_timezone": "该数据源事件时间的默认时区。解析器据此解释无时区标注的时间字符串。",
+    "connection_handler": "连接处理器类型。router 根据此值将原始消息路由到正确的 WebSocket 或 HTTP 处理器。",
+    "connection_url": "主连接地址（WebSocket URL 或 HTTP API URL）。",
+    "connection_backup_url": "备用连接地址。主连接失败时自动切换。可为空。",
+    "institution_key": "机构统一标识键。用于跨多个数据源归并为同一机构（如 jma_fanstudio 和 jma_wolfx 的 institution_key 都是 jma）。",
+    "institution_display_name": "机构完整显示名。用于查询结果和管理端展示。",
+    "institution_active_name": "机构日常简称。用于卡片/消息中的简短显示。",
+    "query_group": "查询分组。决定该源出现在哪个查询命令的结果中：eew→/地震预警, earthquake→/地震列表, weather→/气象预警, typhoon→/台风。空字符串表示不参与分组查询。",
+    "dispatch_family": "消息分发流派。pipeline 根据此值决定走哪条推送路径（如 fan_studio_eew / fan_studio_report / wolfx_eew）。",
+    "provider_source_names": "提供方定义的来源名列表。用于在 FAN Studio 等聚合源中根据 source 字段匹配到正确的子解析器。",
+    "provider_aliases": "别名列表。router 在路由匹配时也检查这些别名。",
+    "routing_tags": "路由标签。供 router 和 pipeline 做批量分类过滤使用。",
+    "payload_signatures": "载荷签名字段组。原始消息同时包含某组中的所有字段时，router 判定匹配该源。支持多组（多组之间是 OR 关系）。",
+    "payload_exclusions": "载荷排除签名字段组。原始消息包含某组中的任一字段时，router 排除该源。"
+  },
+  "_schema": {
+    "_source_type": "earthquake_warning | earthquake_info | tsunami | weather | typhoon",
+    "_provider_family": "fan_studio | wolfx | p2p | global_quake | direct_http",
+    "_query_group": "eew | earthquake | weather | typhoon | tsunami | \"\""
+  },
+  "cea_fanstudio": {
+    "source_id": "cea_fanstudio",
+    "source_type": "earthquake_warning",
+    "provider_family": "fan_studio",
+    "parser_name": "cea_eew",
+    "presentation_type": "earthquake_eew",
+    "config_group": "fan_studio",
+    "config_key": "china_earthquake_warning",
+    "priority": 1,
+    "display_name": "中国地震预警网(CEA)",
+    "default_timezone": "Asia/Shanghai",
+    "connection_handler": "fan_studio",
+    "connection_url": "wss://ws.fanstudio.tech/all",
+    "connection_backup_url": "wss://ws.fanstudio.hk/all",
+    "institution_key": "china",
+    "institution_display_name": "中国地震预警网 EEW",
+    "institution_active_name": "中国地震预警网",
+    "query_group": "eew",
+    "dispatch_family": "fan_studio_eew",
+    "provider_source_names": [
+      "cea"
+    ],
+    "payload_signatures": [
+      [
+        "epiIntensity",
+        "eventId",
+        "updates"
+      ]
+    ]
+  },
+  "cea_pr_fanstudio": {
+    "source_id": "cea_pr_fanstudio",
+    "source_type": "earthquake_warning",
+    "provider_family": "fan_studio",
+    "parser_name": "cea_eew_pr",
+    "presentation_type": "earthquake_eew",
+    "config_group": "fan_studio",
+    "config_key": "china_earthquake_warning_provincial",
+    "priority": 0,
+    "display_name": "中国地震预警网省级融合源",
+    "default_timezone": "Asia/Shanghai",
+    "connection_handler": "fan_studio",
+    "connection_url": "wss://ws.fanstudio.tech/all",
+    "connection_backup_url": "wss://ws.fanstudio.hk/all",
+    "institution_key": "china",
+    "institution_display_name": "中国地震预警网 EEW",
+    "query_group": "eew",
+    "dispatch_family": "fan_studio_eew",
+    "provider_source_names": [
+      "cea-pr"
+    ],
+    "payload_signatures": [
+      [
+        "epiIntensity",
+        "eventId",
+        "updates"
+      ]
+    ]
+  },
+  "cenc_fanstudio": {
+    "source_id": "cenc_fanstudio",
+    "source_type": "earthquake_info",
+    "provider_family": "fan_studio",
+    "parser_name": "cenc_report",
+    "presentation_type": "earthquake_report",
+    "config_group": "fan_studio",
+    "config_key": "cenc_earthquake_report",
+    "priority": 1,
+    "display_name": "中国地震台网(CENC)",
+    "default_timezone": "Asia/Shanghai",
+    "connection_handler": "fan_studio",
+    "connection_url": "wss://ws.fanstudio.tech/all",
+    "connection_backup_url": "wss://ws.fanstudio.hk/all",
+    "institution_key": "china_quake",
+    "institution_display_name": "中国地震台网 CENC",
+    "query_group": "earthquake",
+    "dispatch_family": "fan_studio_report",
+    "provider_source_names": [
+      "cenc"
+    ],
+    "payload_signatures": [
+      [
+        "eventId",
+        "magnitude",
+        "placeName"
+      ]
+    ]
+  },
+  "cwa_fanstudio": {
+    "source_id": "cwa_fanstudio",
+    "source_type": "earthquake_warning",
+    "provider_family": "fan_studio",
+    "parser_name": "cwa_eew",
+    "presentation_type": "earthquake_eew",
+    "config_group": "fan_studio",
+    "config_key": "cwa_earthquake_warning",
+    "priority": 1,
+    "display_name": "台湾中央气象署(CWA)",
+    "default_timezone": "Asia/Taipei",
+    "connection_handler": "fan_studio",
+    "connection_url": "wss://ws.fanstudio.tech/all",
+    "connection_backup_url": "wss://ws.fanstudio.hk/all",
+    "institution_key": "cwa",
+    "institution_display_name": "CWA 地震速报 EEW",
+    "query_group": "eew",
+    "dispatch_family": "fan_studio_eew",
+    "provider_source_names": [
+      "cwa"
+    ],
+    "payload_signatures": [
+      [
+        "reportIntensity",
+        "eventId",
+        "updates"
+      ]
+    ]
+  },
+  "cwa_report_fanstudio": {
+    "source_id": "cwa_report_fanstudio",
+    "source_type": "earthquake_info",
+    "provider_family": "fan_studio",
+    "parser_name": "cwa_report",
+    "presentation_type": "earthquake_report",
+    "config_group": "fan_studio",
+    "config_key": "cwa_earthquake_report",
+    "priority": 0,
+    "display_name": "台湾气象署(地震报告)",
+    "default_timezone": "Asia/Taipei",
+    "connection_handler": "fan_studio",
+    "connection_url": "wss://ws.fanstudio.tech/all",
+    "connection_backup_url": "wss://ws.fanstudio.hk/all",
+    "institution_key": "cwa",
+    "query_group": "earthquake",
+    "dispatch_family": "fan_studio_report",
+    "provider_source_names": [
+      "cwa-weak"
+    ],
+    "payload_signatures": [
+      [
+        "eventId",
+        "magnitude"
+      ]
+    ]
+  },
+  "jma_fanstudio": {
+    "source_id": "jma_fanstudio",
+    "source_type": "earthquake_warning",
+    "provider_family": "fan_studio",
+    "parser_name": "jma_eew",
+    "presentation_type": "earthquake_eew",
+    "config_group": "fan_studio",
+    "config_key": "jma_earthquake_warning",
+    "priority": 1,
+    "display_name": "日本气象厅(JMA)",
+    "default_timezone": "Asia/Tokyo",
+    "connection_handler": "fan_studio",
+    "connection_url": "wss://ws.fanstudio.tech/all",
+    "connection_backup_url": "wss://ws.fanstudio.hk/all",
+    "institution_key": "jma",
+    "institution_display_name": "JMA 緊急地震速報 EEW",
+    "query_group": "eew",
+    "dispatch_family": "fan_studio_eew",
+    "provider_source_names": [
+      "jma"
+    ],
+    "payload_signatures": [
+      [
+        "intensity",
+        "eventId",
+        "updates"
+      ]
+    ]
+  },
+  "jma_report_fanstudio": {
+    "source_id": "jma_report_fanstudio",
+    "source_type": "earthquake_info",
+    "provider_family": "fan_studio",
+    "parser_name": "jma_report",
+    "presentation_type": "earthquake_report",
+    "config_group": "fan_studio",
+    "config_key": "jma_earthquake_report",
+    "priority": 0,
+    "display_name": "日本气象厅(地震情报)",
+    "default_timezone": "Asia/Tokyo",
+    "connection_handler": "fan_studio",
+    "connection_url": "wss://ws.fanstudio.tech/all",
+    "connection_backup_url": "wss://ws.fanstudio.hk/all",
+    "institution_key": "jma",
+    "query_group": "earthquake",
+    "dispatch_family": "fan_studio_report",
+    "provider_source_names": [
+      "jma-report"
+    ],
+    "payload_signatures": [
+      [
+        "eventId",
+        "magnitude"
+      ]
+    ]
+  },
+  "usgs_fanstudio": {
+    "source_id": "usgs_fanstudio",
+    "source_type": "earthquake_info",
+    "provider_family": "fan_studio",
+    "parser_name": "usgs_report",
+    "presentation_type": "earthquake_report",
+    "config_group": "fan_studio",
+    "config_key": "usgs_earthquake",
+    "priority": 1,
+    "display_name": "美国地质调查局(USGS)",
+    "default_timezone": "UTC",
+    "connection_handler": "fan_studio",
+    "connection_url": "wss://ws.fanstudio.tech/all",
+    "connection_backup_url": "wss://ws.fanstudio.hk/all",
+    "institution_key": "usgs",
+    "institution_display_name": "USGS 全球地震",
+    "query_group": "earthquake",
+    "dispatch_family": "fan_studio_report",
+    "provider_source_names": [
+      "usgs"
+    ],
+    "payload_signatures": [
+      [
+        "id",
+        "magnitude",
+        "placeName"
+      ]
+    ]
+  },
+  "emsc_fanstudio": {
+    "source_id": "emsc_fanstudio",
+    "source_type": "earthquake_info",
+    "provider_family": "fan_studio",
+    "parser_name": "emsc_report",
+    "presentation_type": "earthquake_report",
+    "config_group": "fan_studio",
+    "config_key": "emsc_earthquake",
+    "priority": 0,
+    "display_name": "欧洲地中海地震测报中心(EMSC)",
+    "default_timezone": "UTC",
+    "connection_handler": "fan_studio",
+    "connection_url": "wss://ws.fanstudio.tech/all",
+    "connection_backup_url": "wss://ws.fanstudio.hk/all",
+    "institution_key": "emsc",
+    "institution_display_name": "EMSC 欧洲地中海地震",
+    "query_group": "earthquake",
+    "dispatch_family": "fan_studio_report",
+    "provider_source_names": [
+      "emsc"
+    ],
+    "payload_signatures": [
+      [
+        "id",
+        "magnitude",
+        "placeName"
+      ]
+    ]
+  },
+  "hko_fanstudio": {
+    "source_id": "hko_fanstudio",
+    "source_type": "earthquake_info",
+    "provider_family": "fan_studio",
+    "parser_name": "hko_report",
+    "presentation_type": "earthquake_report",
+    "config_group": "fan_studio",
+    "config_key": "hko_earthquake",
+    "priority": 0,
+    "display_name": "香港天文台(HKO)",
+    "default_timezone": "Asia/Hong_Kong",
+    "connection_handler": "fan_studio",
+    "connection_url": "wss://ws.fanstudio.tech/all",
+    "connection_backup_url": "wss://ws.fanstudio.hk/all",
+    "institution_key": "hko",
+    "institution_display_name": "HKO 香港天文台",
+    "query_group": "earthquake",
+    "dispatch_family": "fan_studio_report",
+    "provider_source_names": [
+      "hko"
+    ],
+    "payload_signatures": [
+      [
+        "id",
+        "magnitude",
+        "region"
+      ]
+    ]
+  },
+  "gfz_fanstudio": {
+    "source_id": "gfz_fanstudio",
+    "source_type": "earthquake_info",
+    "provider_family": "fan_studio",
+    "parser_name": "gfz_report",
+    "presentation_type": "earthquake_report",
+    "config_group": "fan_studio",
+    "config_key": "gfz_earthquake",
+    "priority": 0,
+    "display_name": "德国地学研究中心(GFZ)",
+    "default_timezone": "UTC",
+    "connection_handler": "fan_studio",
+    "connection_url": "wss://ws.fanstudio.tech/all",
+    "connection_backup_url": "wss://ws.fanstudio.hk/all",
+    "institution_key": "gfz",
+    "institution_display_name": "GFZ 德国地学中心",
+    "query_group": "earthquake",
+    "dispatch_family": "fan_studio_report",
+    "provider_source_names": [
+      "gfz"
+    ],
+    "payload_signatures": [
+      [
+        "id",
+        "magnitude",
+        "region"
+      ]
+    ]
+  },
+  "usp_fanstudio": {
+    "source_id": "usp_fanstudio",
+    "source_type": "earthquake_info",
+    "provider_family": "fan_studio",
+    "parser_name": "usp_report",
+    "presentation_type": "earthquake_report",
+    "config_group": "fan_studio",
+    "config_key": "usp_earthquake",
+    "priority": 0,
+    "display_name": "圣保罗大学(USP)",
+    "default_timezone": "America/Sao_Paulo",
+    "connection_handler": "fan_studio",
+    "connection_url": "wss://ws.fanstudio.tech/all",
+    "connection_backup_url": "wss://ws.fanstudio.hk/all",
+    "institution_key": "usp",
+    "institution_display_name": "USP 巴西圣保罗大学",
+    "query_group": "earthquake",
+    "dispatch_family": "fan_studio_report",
+    "provider_source_names": [
+      "usp"
+    ],
+    "payload_signatures": [
+      [
+        "id",
+        "magnitude",
+        "region"
+      ]
+    ]
+  },
+  "bcsf_fanstudio": {
+    "source_id": "bcsf_fanstudio",
+    "source_type": "earthquake_info",
+    "provider_family": "fan_studio",
+    "parser_name": "bcsf_report",
+    "presentation_type": "earthquake_report",
+    "config_group": "fan_studio",
+    "config_key": "bcsf_earthquake",
+    "priority": 0,
+    "display_name": "法国中央地震研究所(BCSF)",
+    "default_timezone": "Europe/Paris",
+    "connection_handler": "fan_studio",
+    "connection_url": "wss://ws.fanstudio.tech/all",
+    "connection_backup_url": "wss://ws.fanstudio.hk/all",
+    "institution_key": "bcsf",
+    "institution_display_name": "BCSF 法国中央地震所",
+    "query_group": "earthquake",
+    "dispatch_family": "fan_studio_report",
+    "provider_source_names": [
+      "bcsf"
+    ],
+    "payload_signatures": [
+      [
+        "id",
+        "magnitude",
+        "region"
+      ]
+    ]
+  },
+  "fssn_fanstudio": {
+    "source_id": "fssn_fanstudio",
+    "source_type": "earthquake_info",
+    "provider_family": "fan_studio",
+    "parser_name": "fssn_report",
+    "presentation_type": "earthquake_report",
+    "config_group": "fan_studio",
+    "config_key": "fssn_earthquake",
+    "priority": 0,
+    "display_name": "FSSN地震速报",
+    "default_timezone": "UTC",
+    "connection_handler": "fan_studio",
+    "connection_url": "wss://ws.fanstudio.tech/all",
+    "connection_backup_url": "wss://ws.fanstudio.hk/all",
+    "institution_key": "fssn",
+    "institution_display_name": "FSSN 地震速报",
+    "query_group": "earthquake",
+    "dispatch_family": "fan_studio_report",
+    "provider_source_names": [
+      "fssn"
+    ],
+    "payload_signatures": [
+      [
+        "id",
+        "magnitude",
+        "region"
+      ]
+    ]
+  },
+  "kma_fanstudio": {
+    "source_id": "kma_fanstudio",
+    "source_type": "earthquake_info",
+    "provider_family": "fan_studio",
+    "parser_name": "kma_report",
+    "presentation_type": "earthquake_report",
+    "config_group": "fan_studio",
+    "config_key": "kma_earthquake",
+    "priority": 0,
+    "display_name": "韩国气象厅(KMA)",
+    "default_timezone": "Asia/Seoul",
+    "connection_handler": "fan_studio",
+    "connection_url": "wss://ws.fanstudio.tech/all",
+    "connection_backup_url": "wss://ws.fanstudio.hk/all",
+    "institution_key": "kma",
+    "institution_display_name": "KMA 韩国气象厅",
+    "query_group": "earthquake",
+    "dispatch_family": "fan_studio_report",
+    "provider_source_names": [
+      "kma"
+    ],
+    "payload_signatures": [
+      [
+        "id",
+        "magnitude",
+        "region"
+      ]
+    ]
+  },
+  "sa_fanstudio": {
+    "source_id": "sa_fanstudio",
+    "source_type": "earthquake_warning",
+    "provider_family": "fan_studio",
+    "parser_name": "fan_eew_generic",
+    "presentation_type": "earthquake_eew",
+    "config_group": "fan_studio",
+    "config_key": "shakealert_earthquake_warning",
+    "priority": 0,
+    "display_name": "ShakeAlert地震预警",
+    "default_timezone": "America/Los_Angeles",
+    "connection_handler": "fan_studio",
+    "connection_url": "wss://ws.fanstudio.tech/all",
+    "connection_backup_url": "wss://ws.fanstudio.hk/all",
+    "institution_key": "shakealert",
+    "institution_display_name": "ShakeAlert EEW",
+    "query_group": "eew",
+    "dispatch_family": "fan_studio_eew",
+    "provider_source_names": [
+      "sa",
+      "shakealert"
+    ],
+    "payload_signatures": [
+      [
+        "eventId",
+        "magnitude"
+      ]
+    ]
+  },
+  "kma_eew_fanstudio": {
+    "source_id": "kma_eew_fanstudio",
+    "source_type": "earthquake_warning",
+    "provider_family": "fan_studio",
+    "parser_name": "fan_eew_generic",
+    "presentation_type": "earthquake_eew",
+    "config_group": "fan_studio",
+    "config_key": "kma_eew",
+    "priority": 0,
+    "display_name": "韩国气象厅(EEW)",
+    "default_timezone": "Asia/Seoul",
+    "connection_handler": "fan_studio",
+    "connection_url": "wss://ws.fanstudio.tech/all",
+    "connection_backup_url": "wss://ws.fanstudio.hk/all",
+    "institution_key": "kma_eew",
+    "institution_display_name": "KMA EEW",
+    "query_group": "eew",
+    "dispatch_family": "fan_studio_eew",
+    "provider_source_names": [
+      "kma-eew"
+    ],
+    "payload_signatures": [
+      [
+        "eventId",
+        "magnitude"
+      ]
+    ]
+  },
+  "china_tsunami_fanstudio": {
+    "source_id": "china_tsunami_fanstudio",
+    "source_type": "tsunami",
+    "provider_family": "fan_studio",
+    "parser_name": "tsunami",
+    "presentation_type": "tsunami",
+    "config_group": "fan_studio",
+    "config_key": "china_tsunami",
+    "priority": 1,
+    "display_name": "自然资源部海啸预警中心",
+    "default_timezone": "Asia/Shanghai",
+    "connection_handler": "fan_studio",
+    "connection_url": "wss://ws.fanstudio.tech/all",
+    "connection_backup_url": "wss://ws.fanstudio.hk/all",
+    "institution_key": "tsunami",
+    "institution_display_name": "海啸预警中心",
+    "query_group": "tsunami",
+    "dispatch_family": "fan_studio_tsunami",
+    "provider_source_names": [
+      "tsunami"
+    ],
+    "payload_signatures": [
+      [
+        "warningInfo",
+        "code",
+        "timeInfo"
+      ]
+    ]
+  },
+  "china_weather_fanstudio": {
+    "source_id": "china_weather_fanstudio",
+    "source_type": "weather",
+    "provider_family": "fan_studio",
+    "parser_name": "weather",
+    "presentation_type": "weather",
+    "config_group": "fan_studio",
+    "config_key": "china_weather",
+    "priority": 1,
+    "display_name": "中国气象局",
+    "default_timezone": "Asia/Shanghai",
+    "connection_handler": "fan_studio",
+    "connection_url": "wss://ws.fanstudio.tech/all",
+    "connection_backup_url": "wss://ws.fanstudio.hk/all",
+    "institution_key": "weather",
+    "institution_display_name": "中央气象台",
+    "query_group": "weather",
+    "dispatch_family": "fan_studio_weather",
+    "provider_source_names": [
+      "weatheralarm"
+    ],
+    "payload_signatures": [
+      [
+        "title",
+        "description",
+        "type"
+      ]
+    ]
+  },
+  "beijing_fanstudio": {
+    "source_id": "beijing_fanstudio",
+    "source_type": "earthquake_info",
+    "provider_family": "fan_studio",
+    "parser_name": "beijing_report",
+    "presentation_type": "earthquake_report",
+    "config_group": "fan_studio",
+    "config_key": "beijing_earthquake",
+    "priority": 0,
+    "display_name": "北京地震台网",
+    "default_timezone": "Asia/Shanghai",
+    "connection_handler": "fan_studio",
+    "connection_url": "wss://ws.fanstudio.tech/all",
+    "connection_backup_url": "wss://ws.fanstudio.hk/all",
+    "institution_key": "china_province",
+    "query_group": "earthquake",
+    "dispatch_family": "fan_studio_report",
+    "provider_source_names": [
+      "beijing"
+    ],
+    "payload_signatures": [
+      [
+        "id",
+        "magnitude",
+        "placeName"
+      ]
+    ]
+  },
+  "guangxi_fanstudio": {
+    "source_id": "guangxi_fanstudio",
+    "source_type": "earthquake_info",
+    "provider_family": "fan_studio",
+    "parser_name": "guangxi_report",
+    "presentation_type": "earthquake_report",
+    "config_group": "fan_studio",
+    "config_key": "guangxi_earthquake",
+    "priority": 0,
+    "display_name": "广西地震台网",
+    "default_timezone": "Asia/Shanghai",
+    "connection_handler": "fan_studio",
+    "connection_url": "wss://ws.fanstudio.tech/all",
+    "connection_backup_url": "wss://ws.fanstudio.hk/all",
+    "institution_key": "china_province",
+    "query_group": "earthquake",
+    "dispatch_family": "fan_studio_report",
+    "provider_source_names": [
+      "guangxi"
+    ],
+    "payload_signatures": [
+      [
+        "id",
+        "magnitude",
+        "placeName"
+      ]
+    ]
+  },
+  "ningxia_fanstudio": {
+    "source_id": "ningxia_fanstudio",
+    "source_type": "earthquake_info",
+    "provider_family": "fan_studio",
+    "parser_name": "ningxia_report",
+    "presentation_type": "earthquake_report",
+    "config_group": "fan_studio",
+    "config_key": "ningxia_earthquake",
+    "priority": 0,
+    "display_name": "宁夏地震台网",
+    "default_timezone": "Asia/Shanghai",
+    "connection_handler": "fan_studio",
+    "connection_url": "wss://ws.fanstudio.tech/all",
+    "connection_backup_url": "wss://ws.fanstudio.hk/all",
+    "institution_key": "china_province",
+    "query_group": "earthquake",
+    "dispatch_family": "fan_studio_report",
+    "provider_source_names": [
+      "ningxia"
+    ],
+    "payload_signatures": [
+      [
+        "id",
+        "magnitude",
+        "placeName"
+      ]
+    ]
+  },
+  "shanxi_fanstudio": {
+    "source_id": "shanxi_fanstudio",
+    "source_type": "earthquake_info",
+    "provider_family": "fan_studio",
+    "parser_name": "shanxi_report",
+    "presentation_type": "earthquake_report",
+    "config_group": "fan_studio",
+    "config_key": "shanxi_earthquake",
+    "priority": 0,
+    "display_name": "山西地震台网",
+    "default_timezone": "Asia/Shanghai",
+    "connection_handler": "fan_studio",
+    "connection_url": "wss://ws.fanstudio.tech/all",
+    "connection_backup_url": "wss://ws.fanstudio.hk/all",
+    "institution_key": "china_province",
+    "query_group": "earthquake",
+    "dispatch_family": "fan_studio_report",
+    "provider_source_names": [
+      "shanxi"
+    ],
+    "payload_signatures": [
+      [
+        "id",
+        "magnitude",
+        "placeName"
+      ]
+    ]
+  },
+  "yunnan_fanstudio": {
+    "source_id": "yunnan_fanstudio",
+    "source_type": "earthquake_info",
+    "provider_family": "fan_studio",
+    "parser_name": "yunnan_report",
+    "presentation_type": "earthquake_report",
+    "config_group": "fan_studio",
+    "config_key": "yunnan_earthquake",
+    "priority": 0,
+    "display_name": "云南地震台网",
+    "default_timezone": "Asia/Shanghai",
+    "connection_handler": "fan_studio",
+    "connection_url": "wss://ws.fanstudio.tech/all",
+    "connection_backup_url": "wss://ws.fanstudio.hk/all",
+    "institution_key": "china_province",
+    "query_group": "earthquake",
+    "dispatch_family": "fan_studio_report",
+    "provider_source_names": [
+      "yunnan"
+    ],
+    "payload_signatures": [
+      [
+        "id",
+        "magnitude",
+        "placeName"
+      ]
+    ]
+  },
+  "jma_wolfx": {
+    "source_id": "jma_wolfx",
+    "source_type": "earthquake_warning",
+    "provider_family": "wolfx",
+    "parser_name": "wolfx_jma_eew",
+    "presentation_type": "earthquake_eew",
+    "config_group": "wolfx",
+    "config_key": "jma_earthquake_warning",
+    "priority": 0,
+    "display_name": "日本气象厅(Wolfx)",
+    "default_timezone": "Asia/Tokyo",
+    "connection_handler": "wolfx",
+    "connection_url": "wss://ws-api.wolfx.jp/all_eew",
+    "institution_key": "jma",
+    "institution_display_name": "JMA EEW (Wolfx)",
+    "query_group": "eew",
+    "dispatch_family": "wolfx_eew",
+    "provider_source_names": [
+      "jma"
+    ],
+    "routing_tags": [
+      "wolfx",
+      "jma",
+      "eew"
+    ],
+    "provider_message_types": [
+      "jma_eew"
+    ]
+  },
+  "cenc_wolfx": {
+    "source_id": "cenc_wolfx",
+    "source_type": "earthquake_warning",
+    "provider_family": "wolfx",
+    "parser_name": "wolfx_cenc_eew",
+    "presentation_type": "earthquake_eew",
+    "config_group": "wolfx",
+    "config_key": "cenc_earthquake_warning",
+    "priority": 0,
+    "display_name": "中国地震预警网(Wolfx)",
+    "default_timezone": "Asia/Shanghai",
+    "connection_handler": "wolfx",
+    "connection_url": "wss://ws-api.wolfx.jp/all_eew",
+    "institution_key": "china",
+    "institution_display_name": "CENC EEW (Wolfx)",
+    "query_group": "eew",
+    "dispatch_family": "wolfx_eew",
+    "provider_source_names": [
+      "cenc"
+    ],
+    "routing_tags": [
+      "wolfx",
+      "cenc",
+      "eew"
+    ],
+    "provider_message_types": [
+      "cenc_eew"
+    ]
+  },
+  "cwa_wolfx": {
+    "source_id": "cwa_wolfx",
+    "source_type": "earthquake_warning",
+    "provider_family": "wolfx",
+    "parser_name": "wolfx_cwa_eew",
+    "presentation_type": "earthquake_eew",
+    "config_group": "wolfx",
+    "config_key": "cwa_earthquake_warning",
+    "priority": 0,
+    "display_name": "台湾气象署(Wolfx)",
+    "default_timezone": "Asia/Taipei",
+    "connection_handler": "wolfx",
+    "connection_url": "wss://ws-api.wolfx.jp/all_eew",
+    "institution_key": "cwa",
+    "institution_display_name": "CWA EEW (Wolfx)",
+    "query_group": "eew",
+    "dispatch_family": "wolfx_eew",
+    "provider_source_names": [
+      "cwa"
+    ],
+    "provider_message_types": [
+      "cwa_eew"
+    ]
+  },
+  "jma_wolfx_info": {
+    "source_id": "jma_wolfx_info",
+    "source_type": "earthquake_info",
+    "provider_family": "wolfx",
+    "parser_name": "wolfx_jma_report",
+    "presentation_type": "earthquake_report",
+    "config_group": "wolfx",
+    "config_key": "jma_earthquake_report",
+    "priority": 0,
+    "display_name": "日本气象厅(Wolfx情报)",
+    "default_timezone": "Asia/Tokyo",
+    "connection_handler": "wolfx",
+    "connection_url": "wss://ws-api.wolfx.jp/all_eew",
+    "institution_key": "jma",
+    "institution_display_name": "JMA 地震情报 (Wolfx)",
+    "query_group": "earthquake",
+    "dispatch_family": "wolfx_report",
+    "routing_tags": [
+      "wolfx",
+      "jma",
+      "report"
+    ],
+    "provider_message_types": [
+      "jma_report",
+      "jma_info"
+    ]
+  },
+  "sc_wolfx_eew": {
+    "source_id": "sc_wolfx_eew",
+    "source_type": "earthquake_warning",
+    "provider_family": "wolfx",
+    "parser_name": "wolfx_province_eew",
+    "presentation_type": "earthquake_eew",
+    "config_group": "wolfx",
+    "config_key": "sichuan_earthquake_warning",
+    "priority": 0,
+    "display_name": "四川省地震预警(Wolfx)",
+    "default_timezone": "Asia/Shanghai",
+    "connection_handler": "wolfx",
+    "connection_url": "wss://ws-api.wolfx.jp/all_eew",
+    "institution_key": "china_province",
+    "institution_display_name": "四川地震预警 EEW",
+    "query_group": "eew",
+    "dispatch_family": "wolfx_eew",
+    "routing_tags": [
+      "wolfx",
+      "china",
+      "eew"
+    ],
+    "provider_message_types": [
+      "sc_eew"
+    ]
+  },
+  "fj_wolfx_eew": {
+    "source_id": "fj_wolfx_eew",
+    "source_type": "earthquake_warning",
+    "provider_family": "wolfx",
+    "parser_name": "wolfx_province_eew",
+    "presentation_type": "earthquake_eew",
+    "config_group": "wolfx",
+    "config_key": "fujian_earthquake_warning",
+    "priority": 0,
+    "display_name": "福建省地震预警(Wolfx)",
+    "default_timezone": "Asia/Shanghai",
+    "connection_handler": "wolfx",
+    "connection_url": "wss://ws-api.wolfx.jp/all_eew",
+    "institution_key": "china_province",
+    "institution_display_name": "福建地震预警 EEW",
+    "query_group": "eew",
+    "dispatch_family": "wolfx_eew",
+    "routing_tags": [
+      "wolfx",
+      "china",
+      "eew"
+    ],
+    "provider_message_types": [
+      "fj_eew"
+    ]
+  },
+  "cq_wolfx_eew": {
+    "source_id": "cq_wolfx_eew",
+    "source_type": "earthquake_warning",
+    "provider_family": "wolfx",
+    "parser_name": "wolfx_province_eew",
+    "presentation_type": "earthquake_eew",
+    "config_group": "wolfx",
+    "config_key": "chongqing_earthquake_warning",
+    "priority": 0,
+    "display_name": "重庆市地震预警(Wolfx)",
+    "default_timezone": "Asia/Shanghai",
+    "connection_handler": "wolfx",
+    "connection_url": "wss://ws-api.wolfx.jp/all_eew",
+    "institution_key": "china_province",
+    "institution_display_name": "重庆地震预警 EEW",
+    "query_group": "eew",
+    "dispatch_family": "wolfx_eew",
+    "routing_tags": [
+      "wolfx",
+      "china",
+      "eew"
+    ],
+    "provider_message_types": [
+      "cq_eew"
+    ]
+  },
+  "jma_p2p": {
+    "source_id": "jma_p2p",
+    "source_type": "earthquake_warning",
+    "provider_family": "p2p",
+    "parser_name": "p2p_jma_eew",
+    "presentation_type": "earthquake_eew",
+    "config_group": "p2p",
+    "config_key": "jma_earthquake_warning",
+    "priority": 0,
+    "display_name": "日本气象厅(P2P)",
+    "default_timezone": "Asia/Tokyo",
+    "connection_handler": "p2p",
+    "connection_url": "wss://api.p2pquake.net/v2/ws",
+    "institution_key": "jma",
+    "institution_display_name": "JMA EEW (P2P)",
+    "query_group": "eew",
+    "dispatch_family": "p2p_eew",
+    "provider_source_names": [
+      "jma"
+    ],
+    "routing_tags": [
+      "p2p",
+      "jma",
+      "eew"
+    ]
+  },
+  "jma_p2p_info": {
+    "source_id": "jma_p2p_info",
+    "source_type": "earthquake_info",
+    "provider_family": "p2p",
+    "parser_name": "p2p_jma_report",
+    "presentation_type": "earthquake_report",
+    "config_group": "p2p",
+    "config_key": "jma_earthquake_report",
+    "priority": 0,
+    "display_name": "日本气象厅(P2P地震情报)",
+    "default_timezone": "Asia/Tokyo",
+    "connection_handler": "p2p",
+    "connection_url": "wss://api.p2pquake.net/v2/ws",
+    "institution_key": "jma",
+    "institution_display_name": "JMA 地震情报 (P2P)",
+    "query_group": "earthquake",
+    "dispatch_family": "p2p_report",
+    "provider_source_names": [
+      "jma-info"
+    ],
+    "routing_tags": [
+      "p2p",
+      "jma",
+      "report"
+    ]
+  },
+  "jma_tsunami_p2p": {
+    "source_id": "jma_tsunami_p2p",
+    "source_type": "tsunami",
+    "provider_family": "p2p",
+    "parser_name": "p2p_tsunami",
+    "presentation_type": "tsunami",
+    "config_group": "p2p",
+    "config_key": "jma_tsunami",
+    "priority": 0,
+    "display_name": "日本气象厅(P2P海啸)",
+    "default_timezone": "Asia/Tokyo",
+    "connection_handler": "p2p",
+    "connection_url": "wss://api.p2pquake.net/v2/ws",
+    "institution_key": "tsunami",
+    "institution_display_name": "JMA 海啸 (P2P)",
+    "query_group": "tsunami",
+    "dispatch_family": "p2p_tsunami",
+    "provider_source_names": [
+      "jma-tsunami"
+    ],
+    "routing_tags": [
+      "p2p",
+      "jma",
+      "tsunami"
+    ]
+  },
+  "global_quake": {
+    "source_id": "global_quake",
+    "source_type": "earthquake_warning",
+    "provider_family": "global_quake",
+    "parser_name": "global_quake",
+    "presentation_type": "global_quake",
+    "config_group": "global_quake",
+    "config_key": "enabled",
+    "priority": 0,
+    "display_name": "GlobalQuake地震预警",
+    "default_timezone": "UTC",
+    "connection_handler": "global_quake",
+    "connection_url": "wss://gqm.aloys23.link/ws",
+    "institution_key": "global_quake",
+    "institution_display_name": "GlobalQuake EEW",
+    "query_group": "eew",
+    "dispatch_family": "globalquake_eew",
+    "routing_tags": [
+      "globalquake",
+      "eew"
+    ]
+  },
+  "funvisis_http": {
+    "source_id": "funvisis_http",
+    "source_type": "earthquake_info",
+    "provider_family": "direct_http",
+    "parser_name": "funvisis_http",
+    "presentation_type": "earthquake_report",
+    "config_group": "direct_http",
+    "config_key": "funvisis_earthquake",
+    "priority": 0,
+    "display_name": "委内瑞拉地震研究基金会",
+    "default_timezone": "America/Caracas",
+    "institution_key": "funvisis",
+    "institution_display_name": "FUNVISIS",
+    "query_group": "earthquake"
+  },
+  "cenais_http": {
+    "source_id": "cenais_http",
+    "source_type": "earthquake_info",
+    "provider_family": "direct_http",
+    "parser_name": "cenais_http",
+    "presentation_type": "earthquake_report",
+    "config_group": "direct_http",
+    "config_key": "cenais_earthquake",
+    "priority": 0,
+    "display_name": "古巴国家地震局",
+    "default_timezone": "America/Havana",
+    "institution_key": "cenais",
+    "institution_display_name": "CENAIS",
+    "query_group": "earthquake"
+  },
+  "csnc_http": {
+    "source_id": "csnc_http",
+    "source_type": "earthquake_info",
+    "provider_family": "direct_http",
+    "parser_name": "csnc_http",
+    "presentation_type": "earthquake_report",
+    "config_group": "direct_http",
+    "config_key": "csnc_earthquake",
+    "priority": 0,
+    "display_name": "智利大学国家地震中心",
+    "default_timezone": "America/Santiago",
+    "institution_key": "csnc",
+    "institution_display_name": "CSNC",
+    "query_group": "earthquake"
+  },
+  "phivolcs_http": {
+    "source_id": "phivolcs_http",
+    "source_type": "earthquake_info",
+    "provider_family": "direct_http",
+    "parser_name": "phivolcs_http",
+    "presentation_type": "earthquake_report",
+    "config_group": "direct_http",
+    "config_key": "phivolcs_earthquake",
+    "priority": 0,
+    "display_name": "菲律宾火山地震研究所",
+    "default_timezone": "Asia/Manila",
+    "institution_key": "phivolcs",
+    "institution_display_name": "PHIVOLCS",
+    "query_group": "earthquake"
+  },
+  "tmd_http": {
+    "source_id": "tmd_http",
+    "source_type": "earthquake_info",
+    "provider_family": "direct_http",
+    "parser_name": "tmd_http",
+    "presentation_type": "earthquake_report",
+    "config_group": "direct_http",
+    "config_key": "tmd_earthquake",
+    "priority": 0,
+    "display_name": "泰国气象局",
+    "default_timezone": "Asia/Bangkok",
+    "institution_key": "tmd",
+    "institution_display_name": "TMD",
+    "query_group": "earthquake"
+  },
+  "geonet_http": {
+    "source_id": "geonet_http",
+    "source_type": "earthquake_info",
+    "provider_family": "direct_http",
+    "parser_name": "geonet_http",
+    "presentation_type": "earthquake_report",
+    "config_group": "direct_http",
+    "config_key": "geonet_earthquake",
+    "priority": 0,
+    "display_name": "新西兰地质科学研究所",
+    "default_timezone": "Pacific/Auckland",
+    "institution_key": "geonet",
+    "institution_display_name": "GeoNet",
+    "query_group": "earthquake"
+  },
+  "nrcan_http": {
+    "source_id": "nrcan_http",
+    "source_type": "earthquake_info",
+    "provider_family": "direct_http",
+    "parser_name": "nrcan_http",
+    "presentation_type": "earthquake_report",
+    "config_group": "direct_http",
+    "config_key": "nrcan_earthquake",
+    "priority": 0,
+    "display_name": "加拿大自然资源部",
+    "default_timezone": "America/Toronto",
+    "institution_key": "nrcan",
+    "institution_display_name": "NRCan",
+    "query_group": "earthquake"
+  },
+  "usgs_weekly": {
+    "source_id": "usgs_weekly",
+    "source_type": "earthquake_info",
+    "provider_family": "direct_http",
+    "parser_name": "usgs_weekly",
+    "presentation_type": "earthquake_report",
+    "config_group": "direct_http",
+    "config_key": "usgs_weekly",
+    "priority": 0,
+    "display_name": "USGS周报",
+    "default_timezone": "UTC",
+    "institution_key": "usgs",
+    "institution_display_name": "USGS Weekly",
+    "query_group": "earthquake"
+  },
+  "snet": {
+    "source_id": "snet",
+    "source_type": "earthquake_info",
+    "provider_family": "direct_http",
+    "parser_name": "snet",
+    "presentation_type": "snet",
+    "config_group": "direct_http",
+    "config_key": "snet",
+    "priority": 0,
+    "display_name": "S-net海底地震计",
+    "default_timezone": "Asia/Tokyo",
+    "institution_key": "snet",
+    "institution_display_name": "S-net 海底地震觀測網",
+    "query_group": ""
+  },
+  "cma_typhoon": {
+    "source_id": "cma_typhoon",
+    "source_type": "typhoon",
+    "provider_family": "direct_http",
+    "parser_name": "cma_typhoon",
+    "presentation_type": "typhoon",
+    "config_group": "typhoon",
+    "config_key": "cma_typhoon",
+    "priority": 0,
+    "display_name": "CMA台风路径",
+    "default_timezone": "Asia/Shanghai",
+    "institution_key": "typhoon",
+    "institution_display_name": "中国气象局台风",
+    "query_group": "typhoon"
+  },
+  "jma_typhoon": {
+    "source_id": "jma_typhoon",
+    "source_type": "typhoon",
+    "provider_family": "direct_http",
+    "parser_name": "jma_typhoon",
+    "presentation_type": "typhoon",
+    "config_group": "typhoon",
+    "config_key": "jma_typhoon",
+    "priority": 0,
+    "display_name": "JMA台风路径",
+    "default_timezone": "Asia/Tokyo",
+    "institution_key": "typhoon",
+    "institution_display_name": "日本气象厅台风",
+    "query_group": "typhoon"
+  }
+}

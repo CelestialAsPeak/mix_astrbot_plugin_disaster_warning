@@ -1,0 +1,682 @@
+"""
+plugin.py — Mix灾害预警插件 AstrBot 入口。
+
+命令全部基于旧 events.db 数据库查询实现。
+当旧版插件运行时，新版可直接读取其数据。
+"""
+
+from __future__ import annotations
+
+import asyncio
+import sqlite3
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from astrbot.api import AstrBotConfig, logger
+from astrbot.api.event import AstrMessageEvent, filter
+from astrbot.api.star import Context, Star
+
+try:
+    from config.loader import load_sources
+    from config.accessor import ConfigAccessor
+    from config.validator import ConfigValidator
+    from parser.registry import ParserRegistry
+    from pipeline.pipeline import EventPipeline
+    from broker.signal_bus import SignalBus
+    from broker.router import MessageRouter
+    from broker.websocket import WebSocketManager
+    from broker.http_poller import HttpPollManager
+    from message.push import SessionSender, PushExecutionService, PushOrchestrator
+    from message.presenters import present, WEATHER_TYPE_MAP, LEVEL_COLORS
+    from message.browser import BrowserManager
+    from message.notification import SystemNotificationService, NotificationCenter
+    from storage.database import DatabaseManager
+    from storage.stats import StatisticsManager
+    from storage.session import SessionConfigManager
+    from utils.version import get_plugin_version
+except ImportError:
+    from .config.loader import load_sources
+    from .config.accessor import ConfigAccessor
+    from .config.validator import ConfigValidator
+    from .parser.registry import ParserRegistry
+    from .pipeline.pipeline import EventPipeline
+    from .broker.signal_bus import SignalBus
+    from .broker.router import MessageRouter
+    from .broker.websocket import WebSocketManager
+    from .broker.http_poller import HttpPollManager
+    from .message.push import SessionSender, PushExecutionService, PushOrchestrator
+    from .message.presenters import present, WEATHER_TYPE_MAP, LEVEL_COLORS
+    from .message.browser import BrowserManager
+    from .message.notification import SystemNotificationService, NotificationCenter
+    from .storage.database import DatabaseManager
+    from .storage.stats import StatisticsManager
+    from .storage.session import SessionConfigManager
+    from .utils.version import get_plugin_version
+
+# 触发解析器注册（显式 import，AstrBot 最可靠）
+from .parser.fan_studio import cea, cenc, cwa, jma, global_sources, provincial, generic_eew, tsunami, weather
+from .parser.wolfx import eew as wolfx_eew, province as wolfx_province, report as wolfx_report
+from .parser.p2p import eew as p2p_eew, report as p2p_report, tsunami as p2p_tsunami
+from .parser import global_quake as gq_parser, snet as snet_parser
+from .parser.http_poll import parsers as http_poll_parsers
+from .parser.typhoon import cma as typhoon_cma, jma as typhoon_jma
+
+# ── 数据库查询 — 读旧版 events.db ──
+
+_DB_PATH = Path(
+    r"C:\Users\ZhuanZ.DESKTOP-PH97BKO\.astrbot\data\plugin_data"
+    r"\mix_astrbot_plugin_disaster_warning\events.db"
+)
+_executor = ThreadPoolExecutor(max_workers=2)
+
+
+def _db_query(sql: str, params: tuple = ()) -> list[dict]:
+    """同步 SQLite 查询（在 executor 中跑）。"""
+    if not _DB_PATH.exists():
+        return []
+    conn = sqlite3.connect(str(_DB_PATH))
+    conn.row_factory = sqlite3.Row
+    try:
+        c = conn.cursor()
+        c.execute(sql, params)
+        return [dict(r) for r in c.fetchall()]
+    finally:
+        conn.close()
+
+
+async def _db_query_async(sql: str, params: tuple = ()) -> list[dict]:
+    """异步查询包装。"""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(_executor, _db_query, sql, params)
+
+
+def _format_time_short(ts: str | None) -> str:
+    """时间戳截取到 时:分。"""
+    if not ts:
+        return ""
+    try:
+        return ts[11:16] if "T" in ts else ts[5:16]
+    except IndexError:
+        return ts[:16] if ts else ""
+
+
+# ── 源 → 显示名映射 ──
+
+_SOURCE_DISPLAY: dict[str, str] = {
+    "cea_fanstudio": "中国地震预警网", "cea_pr_fanstudio": "中国地震预警网(省)",
+    "cenc_fanstudio": "中国地震台网", "cenc_wolfx": "CENC(Wolfx)",
+    "cwa_fanstudio": "台湾气象署", "cwa_wolfx": "CWA(Wolfx)",
+    "jma_fanstudio": "日本气象厅", "jma_wolfx": "JMA(Wolfx)", "jma_p2p": "JMA(P2P)",
+    "usgs_fanstudio": "USGS", "emsc_fanstudio": "EMSC",
+    "hko_fanstudio": "HKO", "gfz_fanstudio": "GFZ",
+    "usp_fanstudio": "USP", "bcsf_fanstudio": "BCSF",
+    "fssn_fanstudio": "FSSN", "kma_fanstudio": "KMA",
+    "sa_fanstudio": "ShakeAlert", "kma_eew_fanstudio": "KMA EEW",
+    "global_quake": "GlobalQuake",
+    "funvisis_http": "FUNVISIS", "cenais_http": "CENAIS",
+    "csnc_http": "CSNC", "phivolcs_http": "PHIVOLCS",
+    "tmd_http": "TMD", "geonet_http": "GeoNet",
+    "nrcan_http": "NRCan", "usgs_weekly": "USGS周报",
+    "snet": "S-net", "icl_http": "ICL",
+    "beijing_fanstudio": "北京", "guangxi_fanstudio": "广西",
+    "ningxia_fanstudio": "宁夏", "shanxi_fanstudio": "山西",
+    "yunnan_fanstudio": "云南",
+    "china_tsunami_fanstudio": "海啸", "china_weather_fanstudio": "气象",
+    "sc_wolfx_eew": "四川", "fj_wolfx_eew": "福建", "cq_wolfx_eew": "重庆",
+}
+
+
+# ── 帮助文本 ──
+
+_PLUGIN_HELP = """🚨 Mix灾害预警使用说明
+
+📋 管理:
+  /灾害预警            帮助
+  /灾害预警状态        服务状态
+  /灾害预警重连        重连数据源（管理）
+  /灾害预警统计        事件统计
+  /灾害预警统计清除    清除统计（管理）
+  /灾害预警配置 查看   查看配置
+
+📋 查询:
+  /地震列表 <源> <数量>  地震列表（默认 cenc 9条）
+  /地震预警              EEW 状态
+  /气象预警 <省份|全国>   气象预警
+  /台风 [编号]           台风路径
+
+🔍 快捷 /cenc /cea /jma /usgs /cwa /emsc /hko /gfz /bcsf /fssn /kma /sa
+      /geonet /nrcan /snet /海啸 /气象 /tg /zl /flb
+      /北京 /广西 /宁夏 /山西 /云南
+
+  v{version} | AGPL v3 | 数据源: 已接入46+
+"""
+
+
+# ═══════════════════════════ 主插件 ═══════════════════════════
+
+
+class MixDisasterWarningPlugin(Star):
+    """Mix灾害预警插件。"""
+
+    def __init__(self, context: Context, config: AstrBotConfig = None) -> None:
+        super().__init__(context)
+        self.config = config or {}
+        self._config_accessor = ConfigAccessor(dict(self.config))
+
+        # 运行时
+        self.pipeline: EventPipeline | None = None
+        self.signal_bus = SignalBus()
+        self.ws_manager: WebSocketManager | None = None
+        self.http_poll_manager: HttpPollManager | None = None
+        self.browser_manager: BrowserManager | None = None
+        self.database: DatabaseManager | None = None
+        self.stats_manager: StatisticsManager | None = None
+        self.session_config_manager: SessionConfigManager | None = None
+        self.notification_center: NotificationCenter | None = None
+
+        self._service_task: asyncio.Task | None = None
+        self._start_time: float = 0.0
+        self._setup_done = False
+
+    async def initialize(self):
+        try:
+            logger.info("[Mix] 初始化...")
+            if not self.config.get("enabled", True):
+                logger.info("[Mix] 已禁用")
+                return
+
+            sources = load_sources()
+            validated = ConfigValidator.validate(dict(self.config))
+            self.config.update(validated)
+
+            self.database = DatabaseManager(self._get_storage_path() / "events.db")
+            await self.database.initialize()
+
+            self.stats_manager = StatisticsManager(dict(self.config))
+            self.session_config_manager = SessionConfigManager(dict(self.config))
+            self.notification_center = NotificationCenter()
+
+            self.browser_manager = BrowserManager()
+            await self.browser_manager.initialize()
+
+            session_sender = SessionSender(self.context)
+            push_svc = PushExecutionService(dict(self.config), session_sender)
+            orch = PushOrchestrator(dict(self.config), push_svc.execute_push)
+
+            self.pipeline = EventPipeline(
+                config=dict(self.config), push_manager=orch,
+                stats_manager=self.stats_manager,
+            )
+
+            router = MessageRouter(pipeline=self.pipeline)
+            for sid in sources:
+                if not sid.startswith("_"):
+                    self.signal_bus.on(sid, router.route)
+
+            self.ws_manager = WebSocketManager(dict(self.config))
+            self.ws_manager.set_message_handler(
+                lambda name, data: self.signal_bus.emit(name, data)
+            )
+            self._setup_ws_connections(sources)
+
+            self.http_poll_manager = HttpPollManager()
+            self._setup_http_pollers(sources, router)
+
+            self._start_time = __import__("time").time()
+            self._service_task = asyncio.create_task(self._run_service())
+            self._setup_done = True
+            logger.info("[Mix] 初始化完成")
+
+        except Exception as e:
+            logger.error(f"[Mix] 初始化失败: {e}")
+            await self.terminate()
+            raise
+
+    async def terminate(self):
+        logger.info("[Mix] 停止...")
+        if self._service_task:
+            self._service_task.cancel()
+            try:
+                await self._service_task
+            except asyncio.CancelledError:
+                pass
+        if self.ws_manager:
+            await self.ws_manager.stop_all()
+        if self.http_poll_manager:
+            await self.http_poll_manager.stop_all()
+        if self.browser_manager:
+            await self.browser_manager.cleanup()
+        if self.database:
+            await self.database.close()
+        logger.info("[Mix] 已停止")
+
+    async def _run_service(self):
+        """后台服务循环。"""
+        try:
+            if self.ws_manager:
+                await self.ws_manager.start_all()
+            if self.http_poll_manager:
+                await self.http_poll_manager.start_all()
+            while True:
+                await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            pass
+
+    def _get_storage_path(self) -> Path:
+        try:
+            from astrbot.api.star import StarTools
+            return StarTools.get_data_dir("mix_astrbot_plugin_disaster_warning")
+        except Exception:
+            return Path("data") / "mix_disaster"
+
+    def _setup_ws_connections(self, sources: dict):
+        """配置 WebSocket 连接（仅启用的组，直接从配置文件读取）。"""
+        # 直接从文件读，避免 self.config 为空或格式问题
+        ds_cfg = {}
+        try:
+            import json
+            cfg_path = Path(
+                r"C:\Users\ZhuanZ.DESKTOP-PH97BKO\.astrbot\data\config"
+                r"\mix_astrbot_plugin_disaster_warning_config.json"
+            )
+            if cfg_path.exists():
+                with open(cfg_path, encoding="utf-8-sig") as f:
+                    raw = json.load(f)
+                ds_cfg = raw.get("data_sources", {})
+        except Exception as e:
+            logger.error(f"[Mix] 读取配置文件失败: {e}")
+
+        groups: dict = {}
+        for sid, entry in sources.items():
+            if sid.startswith("_") or not isinstance(entry, dict):
+                continue
+            # 检查该数据源所属组是否启用
+            group = entry.get("config_group", "")
+            group_cfg = ds_cfg.get(group, {})
+            if isinstance(group_cfg, dict) and group_cfg.get("enabled", True) is False:
+                continue
+
+            url = entry.get("connection_url", "")
+            handler = entry.get("connection_handler", "")
+            if handler and url:
+                key = entry.get("connection_group", handler)
+                if key not in groups:
+                    groups[key] = {"url": url, "backup": entry.get("connection_backup_url", "")}
+        for name, cfg in groups.items():
+            self.ws_manager.add_connection(name, cfg["url"], cfg.get("backup", ""))
+
+    def _setup_http_pollers(self, sources: dict, router: MessageRouter):
+        POLLERS = {
+            "funvisis_http": ("http://www.funvisis.gob.ve/sis/ultimos.php", 60, False),
+            "cenais_http": ("http://www.cenais.cu/sismos.json", 60, False),
+            "geonet_http": ("https://api.geonet.org.nz/quake?MMI=-1", 30, False),
+            "nrcan_http": ("https://www.earthquakescanada.nrcan.gc.ca/cache/earthquakes/canada-30.xml", 60, True),
+            "usgs_weekly": ("https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_week.geojson", 300, False),
+        }
+        for sid, (url, interval, raw_text) in POLLERS.items():
+            if sid in sources:
+                self.http_poll_manager.add_poller(
+                    name=sid, url=url, interval=interval,
+                    handler=lambda n, d: self.signal_bus.emit(n, d),
+                    raw_text=raw_text,
+                )
+
+    # ═══════════════════ 数据查询 ═══════════════════
+
+    async def _query_source_events(
+        self, source_id: str, limit: int = 10, days: int = 7
+    ) -> list[dict]:
+        """按数据源查询最近事件。"""
+        sql = """SELECT real_event_id, source, type, magnitude, place_name,
+                        time, depth, latitude, longitude, description
+                 FROM events
+                 WHERE source=? AND type IN ('earthquake','earthquake_info')
+                   AND magnitude IS NOT NULL
+                 ORDER BY id DESC LIMIT ?"""
+        return await _db_query_async(sql, (source_id, limit))
+
+    async def _query_source_eew(self, source_id: str, limit: int = 10) -> list[dict]:
+        """查询 EEW 事件。"""
+        sql = """SELECT real_event_id, source, type, magnitude, place_name,
+                        time, depth, report_num, description
+                 FROM events
+                 WHERE source=? AND type='earthquake_warning'
+                 ORDER BY id DESC LIMIT ?"""
+        return await _db_query_async(sql, (source_id, limit))
+
+    async def _query_weather_alarms(
+        self, province: str = "", limit: int = 20
+    ) -> list[dict]:
+        """查询气象预警。"""
+        if province and province != "全国":
+            sql = """SELECT real_event_id, source, type, description, subtitle,
+                            place_name, level, time, weather_type_code, info_type
+                     FROM events
+                     WHERE type='weather_alarm' AND (place_name LIKE ? OR description LIKE ?)
+                     ORDER BY id DESC LIMIT ?"""
+            like = f"%{province}%"
+            return await _db_query_async(sql, (like, like, limit))
+        else:
+            sql = """SELECT real_event_id, source, type, description, subtitle,
+                            place_name, level, time, weather_type_code, info_type
+                     FROM events WHERE type='weather_alarm'
+                     ORDER BY id DESC LIMIT ?"""
+            return await _db_query_async(sql, (limit,))
+
+    async def _query_typhoon(self, code: str = "") -> list[dict]:
+        """查询台风。"""
+        if code:
+            sql = """SELECT real_event_id, source, type, description, subtitle,
+                            place_name, magnitude, time
+                     FROM events
+                     WHERE type='typhoon' AND (real_event_id LIKE ? OR description LIKE ?)
+                     ORDER BY id DESC LIMIT 5"""
+            like = f"%{code}%"
+            return await _db_query_async(sql, (like, like))
+        else:
+            sql = """SELECT real_event_id, source, type, description, subtitle,
+                            place_name, magnitude, time
+                     FROM events WHERE type='typhoon'
+                     ORDER BY id DESC LIMIT 5"""
+            return await _db_query_async(sql, ())
+
+    async def _query_eew_status(self) -> str:
+        """查询各机构 EEW 状态。"""
+        sources_eew = [
+            "cea_fanstudio", "cwa_fanstudio", "jma_fanstudio",
+            "jma_p2p", "jma_wolfx", "sa_fanstudio",
+            "kma_eew_fanstudio", "global_quake",
+        ]
+        lines = ["📡 EEW 状态"]
+        for sid in sources_eew:
+            rows = await self._query_source_eew(sid, 1)
+            if rows:
+                r = rows[0]
+                t = _format_time_short(r.get("time", ""))
+                mag = r.get("magnitude", "?")
+                place = r.get("place_name", "") or r.get("description", "")[:20]
+                lines.append(f"  ✅ {_SOURCE_DISPLAY.get(sid, sid)} M{mag} {place} ({t})")
+            else:
+                lines.append(f"  ⏳ {_SOURCE_DISPLAY.get(sid, sid)} 暂无数据")
+        return "\n".join(lines)
+
+    # ═══════════════════ 命令: 帮助 ═══════════════════
+
+    @filter.command("灾害预警")
+    async def help_cmd(self, event: AstrMessageEvent):
+        yield event.plain_result(_PLUGIN_HELP.format(version=get_plugin_version()))
+
+    # ═══════════════════ 命令: 管理 ═══════════════════
+
+    @filter.command("灾害预警状态")
+    async def status_cmd(self, event: AstrMessageEvent):
+        lines = ["📊 Mix灾害预警状态"]
+        if self.ws_manager:
+            for name, ok in self.ws_manager.get_status().items():
+                lines.append(f"  {'✅' if ok else '❌'} {name}")
+        # DB 统计
+        rows = await _db_query_async(
+            "SELECT type, COUNT(*) as c FROM events GROUP BY type", ()
+        )
+        for r in rows:
+            lines.append(f"  📦 {r['type']}: {r['c']} 条")
+        uptime = __import__("time").time() - self._start_time
+        lines.append(f"⏱ 运行: {uptime / 3600:.1f}h")
+        yield event.plain_result("\n".join(lines))
+
+    @filter.command("灾害预警重连")
+    async def reconnect_cmd(self, event: AstrMessageEvent):
+        if not await self._is_admin(event):
+            yield event.plain_result("❌ 仅管理员")
+            return
+        results = []
+        if self.ws_manager:
+            for name, ok in self.ws_manager.get_status().items():
+                if not ok:
+                    ok2 = await self.ws_manager.reconnect(name)
+                    results.append(f"  {'✅' if ok2 else '❌'} {name}")
+        yield event.plain_result(
+            "🔄 重连:\n" + ("\n".join(results) if results else "  无离线连接")
+        )
+
+    @filter.command("灾害预警统计")
+    async def stats_cmd(self, event: AstrMessageEvent):
+        rows = await _db_query_async(
+            "SELECT source, COUNT(*) as c FROM events GROUP BY source ORDER BY c DESC LIMIT 15", ()
+        )
+        lines = ["📊 数据源事件量 TOP15"]
+        for r in rows:
+            name = _SOURCE_DISPLAY.get(r["source"], r["source"])
+            lines.append(f"  {name}: {r['c']}")
+        yield event.plain_result("\n".join(lines))
+
+    @filter.command("灾害预警统计清除")
+    async def stats_clear_cmd(self, event: AstrMessageEvent):
+        if not await self._is_admin(event):
+            yield event.plain_result("❌ 仅管理员")
+            return
+        yield event.plain_result("✅ 统计清除功能需停用旧版插件后启用新版数据库")
+
+    @filter.command("灾害预警推送开关")
+    async def toggle_push_cmd(self, event: AstrMessageEvent):
+        if not await self._is_admin(event):
+            yield event.plain_result("❌ 仅管理员")
+            return
+        yield event.plain_result("🔔 推送开关待 WebSocket 接入后实现")
+
+    @filter.command("灾害预警配置")
+    async def config_cmd(self, event: AstrMessageEvent, action: str = None, target: str = None):
+        if action == "查看":
+            yield event.plain_result(f"全局配置: {dict(self.config)}")
+        else:
+            yield event.plain_result("用法: /灾害预警配置 查看")
+
+    # ═══════════════════ 命令: 查询 ═══════════════════
+
+    @filter.command("地震列表查询", alias={"地震列表"})
+    async def earthquake_list_cmd(
+        self, event: AstrMessageEvent,
+        source: str = "cenc", count: int = 9, mode: str = "text",
+    ):
+        # 解析 source 简写 → 完整 source_id
+        src_map = {
+            "cenc": "cenc_fanstudio", "cea": "cea_fanstudio",
+            "jma": "jma_fanstudio", "usgs": "usgs_fanstudio",
+            "cwa": "cwa_fanstudio", "emsc": "emsc_fanstudio",
+        }
+        sid = src_map.get(source, source)
+        rows = await self._query_source_events(sid, min(count, 30))
+        if not rows:
+            yield event.plain_result(f"📋 {source} 暂无地震数据")
+            return
+        lines = [f"📋 {source} 最新地震 ({len(rows)} 条)"]
+        for i, r in enumerate(rows[:count], 1):
+            mag = r.get("magnitude", "?")
+            place = (r.get("place_name") or r.get("description") or "未知")[:25]
+            t = _format_time_short(r.get("time", ""))
+            lines.append(f"  {i}. M{mag} {place} {t}")
+        yield event.plain_result("\n".join(lines))
+
+    @filter.command("地震预警查询", alias={"地震预警"})
+    async def eew_query_cmd(self, event: AstrMessageEvent):
+        text = await self._query_eew_status()
+        yield event.plain_result(text)
+
+    @filter.command("气象预警查询", alias={"气象预警"})
+    async def weather_query_cmd(
+        self, event: AstrMessageEvent,
+        keyword: str = None, optional_a: str = None, optional_b: str = None,
+    ):
+        province = keyword or ""
+        rows = await self._query_weather_alarms(province, 20)
+        if not rows:
+            yield event.plain_result("🌤 暂无气象预警数据")
+            return
+        lines = [f"🌤 气象预警 {'全国' if not province else province} ({len(rows)} 条)"]
+        for r in rows[:15]:
+            level = r.get("level", "")
+            icon = LEVEL_COLORS.get(level, "")
+            type_code = r.get("weather_type_code", "")
+            type_name = WEATHER_TYPE_MAP.get(type_code, "")
+            desc = (r.get("subtitle") or r.get("description") or "")[:50]
+            place = r.get("place_name", "") or ""
+            t = _format_time_short(r.get("time", ""))
+            lines.append(f"  {icon}{type_name}{level} {place} {desc} {t}")
+        yield event.plain_result("\n".join(lines))
+
+    @filter.regex(r"^/(?:台风|typhoon)(?:\s|$)")
+    async def typhoon_cmd(self, event: AstrMessageEvent):
+        rows = await self._query_typhoon()
+        if not rows:
+            yield event.plain_result("🌀 暂无台风数据")
+            return
+        lines = ["🌀 近期台风"]
+        for r in rows:
+            name = r.get("description", "?")[:30]
+            t = _format_time_short(r.get("time", ""))
+            lines.append(f"  {name} {t}")
+        yield event.plain_result("\n".join(lines))
+
+    @filter.regex(r"^/(?:震央|hypo)(?:\s|$)")
+    async def hypo_cmd(self, event: AstrMessageEvent):
+        yield event.plain_result("🗺️ 震央分布图渲染功能开发中（需 Playwright）")
+
+    @filter.regex(r"^/(?:海啸|tsunami)(?:\s|$)")
+    async def tsunami_cmd(self, event: AstrMessageEvent):
+        rows = await _db_query_async(
+            "SELECT * FROM events WHERE type='tsunami' ORDER BY id DESC LIMIT 3", ()
+        )
+        if not rows:
+            yield event.plain_result("🌊 暂无海啸数据")
+            return
+        lines = ["🌊 海啸信息"]
+        for r in rows:
+            title = r.get("description", r.get("subtitle", ""))[:50]
+            t = _format_time_short(r.get("time", ""))
+            lines.append(f"  {title} {t}")
+        yield event.plain_result("\n".join(lines))
+
+    # ═══════════════════ 快捷查询 ═══════════════════
+
+    async def _quick_query(self, event: AstrMessageEvent, source_id: str, display: str):
+        rows = await self._query_source_events(source_id, 5)
+        if not rows:
+            yield event.plain_result(f"📡 {display} 暂无数据")
+            return
+        lines = [f"📡 {display} 最新"]
+        for r in rows:
+            mag = r.get("magnitude", "?")
+            place = (r.get("place_name") or r.get("description") or "")[:20]
+            t = _format_time_short(r.get("time", ""))
+            lines.append(f"  M{mag} {place} {t}")
+        yield event.plain_result("\n".join(lines))
+
+    @filter.regex(r"^/cenc(?:\s|$)")
+    async def q_cenc(self, e):
+        async for r in self._quick_query(e, "cenc_fanstudio", "中国地震台网"): yield r
+
+    @filter.regex(r"^/cea(?:\s|$)")
+    async def q_cea(self, e):
+        async for r in self._quick_query(e, "cea_fanstudio", "中国地震预警网"): yield r
+
+    @filter.regex(r"^/jma(?:\s|$)")
+    async def q_jma(self, e):
+        async for r in self._quick_query(e, "jma_fanstudio", "日本气象厅"): yield r
+
+    @filter.regex(r"^/usgs(?:\s|$)")
+    async def q_usgs(self, e):
+        async for r in self._quick_query(e, "usgs_fanstudio", "USGS"): yield r
+
+    @filter.regex(r"^/cwa(?:\s|$)")
+    async def q_cwa(self, e):
+        async for r in self._quick_query(e, "cwa_fanstudio", "台湾气象署"): yield r
+
+    @filter.regex(r"^/emsc(?:\s|$)")
+    async def q_emsc(self, e):
+        async for r in self._quick_query(e, "emsc_fanstudio", "EMSC"): yield r
+
+    @filter.regex(r"^/hko(?:\s|$)")
+    async def q_hko(self, e):
+        async for r in self._quick_query(e, "hko_fanstudio", "HKO"): yield r
+
+    @filter.regex(r"^/gfz(?:\s|$)")
+    async def q_gfz(self, e):
+        async for r in self._quick_query(e, "gfz_fanstudio", "GFZ"): yield r
+
+    @filter.regex(r"^/bcsf(?:\s|$)")
+    async def q_bcsf(self, e):
+        async for r in self._quick_query(e, "bcsf_fanstudio", "BCSF"): yield r
+
+    @filter.regex(r"^/fssn(?:\s|$)")
+    async def q_fssn(self, e):
+        async for r in self._quick_query(e, "fssn_fanstudio", "FSSN"): yield r
+
+    @filter.regex(r"^/kma(?:\s|$)")
+    async def q_kma(self, e):
+        async for r in self._quick_query(e, "kma_fanstudio", "KMA"): yield r
+
+    @filter.regex(r"^/sa(?:\s|$)")
+    async def q_sa(self, e):
+        async for r in self._quick_query(e, "sa_fanstudio", "ShakeAlert"): yield r
+
+    @filter.regex(r"^/nrcan(?:\s|$)")
+    async def q_nrcan(self, e):
+        async for r in self._quick_query(e, "nrcan_http", "NRCan"): yield r
+
+    @filter.regex(r"^/geonet(?:\s|$)")
+    async def q_geonet(self, e):
+        async for r in self._quick_query(e, "geonet_http", "GeoNet"): yield r
+
+    @filter.regex(r"^/(?:气象|weather)(?:\s|$)")
+    async def q_weather(self, e):
+        async for r in self.weather_query_cmd(e): yield r
+
+    @filter.regex(r"^/北京(?:\s|$)")
+    async def q_bj(self, e):
+        async for r in self._quick_query(e, "beijing_fanstudio", "北京台网"): yield r
+
+    @filter.regex(r"^/广西(?:\s|$)")
+    async def q_gx(self, e):
+        async for r in self._quick_query(e, "guangxi_fanstudio", "广西台网"): yield r
+
+    @filter.regex(r"^/宁夏(?:\s|$)")
+    async def q_nx(self, e):
+        async for r in self._quick_query(e, "ningxia_fanstudio", "宁夏台网"): yield r
+
+    @filter.regex(r"^/山西(?:\s|$)")
+    async def q_sx(self, e):
+        async for r in self._quick_query(e, "shanxi_fanstudio", "山西台网"): yield r
+
+    @filter.regex(r"^/云南(?:\s|$)")
+    async def q_yn(self, e):
+        async for r in self._quick_query(e, "yunnan_fanstudio", "云南台网"): yield r
+
+    @filter.regex(r"^/tg(?:\s|$)")
+    async def q_tg(self, e):
+        async for r in self._quick_query(e, "tmd_http", "TMD"): yield r
+
+    @filter.regex(r"^/zl(?:\s|$)")
+    async def q_zl(self, e):
+        async for r in self._quick_query(e, "csnc_http", "CSNC"): yield r
+
+    @filter.regex(r"^/flb(?:\s|$)")
+    async def q_flb(self, e):
+        async for r in self._quick_query(e, "phivolcs_http", "PHIVOLCS"): yield r
+
+    @filter.regex(r"^/gb(?:\s|$)")
+    async def q_gb(self, e):
+        async for r in self._quick_query(e, "cenais_http", "CENAIS"): yield r
+
+    # ═══════════════════ 辅助 ═══════════════════
+
+    async def _is_admin(self, event: AstrMessageEvent) -> bool:
+        try:
+            admins = self.config.get("admin_users", [])
+            return event.get_sender_id() in admins
+        except Exception:
+            return False
+
+    async def on_astrbot_loaded(self):
+        logger.debug("[Mix] 准备就绪")

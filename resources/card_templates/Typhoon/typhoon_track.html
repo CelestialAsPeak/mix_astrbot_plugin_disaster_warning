@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>台风路径图</title>
+<link rel="stylesheet" href="{{ leaflet_css_url }}" />
+<script src="{{ leaflet_js_url }}"></script>
+<script>{{ map_render_helper_js }}</script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+    width: 1400px; height: 1000px;
+    background: #060606;
+    font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
+    overflow: hidden;
+}
+#card-wrapper {
+    width: 1400px; height: 1000px;
+    display: flex;
+    background: #0e0e12;
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+/* ── 面板 ── */
+#panel {
+    width: 390px; flex-shrink: 0;
+    background: #0e0e12;
+    padding: 12px 8px 12px 14px;
+    display: flex; flex-direction: column;
+    gap: 7px;
+    overflow: hidden;
+}
+.watermark {
+    position: absolute; top: 10px; right: 14px;
+    color: rgba(180,185,195,0.5);
+    font-size: 13px; font-weight: bold;
+    pointer-events: none;
+    z-index: 1001;
+    text-shadow: 0 0 6px rgba(0,0,0,0.6);
+}
+.card {
+    background: #181822;
+    border: 1px solid #2a2a37;
+    border-radius: 16px;
+    padding: 10px 14px;
+    overflow: hidden;
+    position: relative;
+}
+.card::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0;
+    height: 24px;
+    background: linear-gradient(to bottom, rgba(34,34,48,0.9), transparent);
+    border-radius: 16px 16px 0 0;
+    pointer-events: none;
+}
+.card-header {
+    font-size: 13px; font-weight: bold;
+    color: #3787e1;
+    margin-bottom: 6px;
+    position: relative; z-index: 1;
+}
+.row-title {
+    font-size: 13px; color: #697080;
+    display: inline;
+}
+.row-value {
+    font-size: 14px; font-weight: bold; color: #e1e4eb;
+    float: right;
+}
+.trend-up { color: #f04646; }
+.trend-down { color: #46c36e; }
+
+/* ── 标题行横排 ── */
+.card-row { display: flex; gap: 7px; }
+.card-half { flex: 1; }
+
+/* ── 类别标签 ── */
+.badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 6px;
+    font-size: 13px; font-weight: bold;
+    color: #fff;
+    margin-right: 6px;
+}
+.badge-src {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 13px; font-weight: bold;
+    color: #fff;
+}
+.badge-src-cma { background: #3787d7; }
+.badge-src-jma { background: #d75037; }
+
+/* ── 风圈行 ── */
+.radii-label { font-size: 12px; font-weight: bold; }
+
+/* ── 表格 ── */
+.table-wrap { font-size: 12px; font-weight: bold; }
+.table-header { color: #697080; font-size: 11px; margin-bottom: 2px; }
+.table-row { line-height: 18px; display: flex; }
+.table-row-alt { background: rgba(30,30,42,0.6); border-radius: 4px; }
+.table-cell { flex-shrink: 0; }
+
+/* ── 迷你折线图 ── */
+.chart-wrap { position: relative; }
+#mini-chart { width: 100%; height: 55px; display: block; }
+.chart-legend { font-size: 11px; color: #697080; margin-top: 2px; }
+.chart-legend span { display: inline-block; margin-right: 14px; }
+.chart-legend span::before {
+    content: ''; display: inline-block;
+    width: 10px; height: 3px; border-radius: 2px;
+    margin-right: 4px; vertical-align: middle;
+}
+.chart-legend .lw::before { background: #ff9614; }
+.chart-legend .lp::before { background: #64b9ff; }
+
+/* ── 地图区域 ── */
+#map-area {
+    flex: 1; position: relative;
+    margin: 6px 6px 6px 0;
+    border-radius: 12px; overflow: hidden;
+}
+#map { width: 100%; height: 100%; background: #060606; }
+#overlay-canvas {
+    position: absolute; top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 1000;
+}
+</style>
+</head>
+<body>
+<div id="card-wrapper">
+
+<!-- ═══ 面板 ═══ -->
+<div id="panel">
+
+    <!-- Row1: 台风名 + 实况 -->
+    <div class="card-row">
+        <div class="card card-half">
+            <div class="card-header">&#9733; 台风</div>
+            <div class="row-title">名称</div>
+            <div class="row-value">{{ event_name }}</div>
+            <div style="clear:both"></div>
+            <div class="row-title">编号</div>
+            <div class="row-value">{{ event_code }}</div>
+            <div style="clear:both; height:2px"></div>
+            <div style="margin-top:4px">
+                {% if category_name %}
+                <span class="badge" style="background:rgba({{ cat_color_rgb }},1)">{{ category_name }}</span>
+                {% endif %}
+                <span class="badge-src badge-src-{{ source | lower }}">{{ source }}</span>
+            </div>
+        </div>
+        <div class="card card-half">
+            <div class="card-header">实况</div>
+            <div class="row-title">风速</div>
+            <div class="row-value{% if ws_trend == '↑' %} trend-up{% elif ws_trend == '↓' %} trend-down{% endif %}">
+                {{ wind_speed }}{{ ws_trend }}
+            </div>
+            <div style="clear:both"></div>
+            <div class="row-title">气压</div>
+            <div class="row-value{% if pr_trend == '↑' %} trend-up{% elif pr_trend == '↓' %} trend-down{% endif %}">
+                {{ pressure }}{{ pr_trend }}
+            </div>
+            <div style="clear:both"></div>
+            <div class="row-title">移动</div>
+            <div class="row-value">{{ move_dir }} {{ move_speed }}</div>
+            <div style="clear:both"></div>
+            <div class="row-title">位置</div>
+            <div class="row-value" style="font-size:13px">{{ position }}</div>
+            <div style="clear:both"></div>
+        </div>
+    </div>
+
+    <!-- Row2: 风圈半径 + 折线图 -->
+    <div class="card-row">
+        <div class="card card-half">
+            <div class="card-header">风圈半径</div>
+            {% for r in wind_radii %}
+            <div class="radii-label" style="color:rgba({{ r.color_rgb }},1)">{{ r.label }}:</div>
+            {% for line in r.lines %}
+            <div style="font-size:12px;font-weight:bold;color:rgba({{ r.color_rgb }},1);margin-left:6px;line-height:1.5">{{ line }}</div>
+            {% endfor %}
+            {% else %}
+            <div style="font-size:13px;color:#697080">无风圈数据</div>
+            {% endfor %}
+        </div>
+        <div class="card card-half">
+            <div class="card-header">风速/气压变化</div>
+            <div class="chart-wrap">
+                <canvas id="mini-chart"></canvas>
+                <div class="chart-legend">
+                    <span class="lw">风速</span>
+                    <span class="lp">气压</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 卡片5: 预报 -->
+    <div class="card" style="flex-shrink:0">
+        <div class="card-header">路径预报</div>
+        {% if forecast_rows %}
+        <div class="table-wrap">
+            <div class="table-header table-row">
+                <span class="table-cell" style="width:24%">时间</span>
+                <span class="table-cell" style="width:28%">位置</span>
+                <span class="table-cell" style="width:14%">风速</span>
+                <span class="table-cell" style="width:14%">气压</span>
+                <span class="table-cell" style="width:20%">等级</span>
+            </div>
+            {% for r in forecast_rows %}
+            <div class="table-row{% if loop.index is odd %}{% else %} table-row-alt{% endif %}">
+                <span class="table-cell" style="width:24%;color:#e1e4eb">{{ r.time }}</span>
+                <span class="table-cell" style="width:28%;color:#e1e4eb">{{ r.pos }}</span>
+                <span class="table-cell" style="width:14%;color:{{ r.cat_color }}">{{ r.ws }}</span>
+                <span class="table-cell" style="width:14%;color:{{ r.cat_color }}">{{ r.pr }}</span>
+                <span class="table-cell" style="width:20%;color:{{ r.cat_color }}">{{ r.cat }}</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div style="font-size:13px;color:#697080">暂无预报数据</div>
+        {% endif %}
+    </div>
+
+    <!-- 卡片6: 历史 -->
+    <div class="card" style="flex:1;min-height:40px;overflow-y:auto">
+        <div class="card-header">路径历史</div>
+        {% if history_rows %}
+        <div class="table-wrap">
+            <div class="table-header table-row">
+                <span class="table-cell" style="width:24%">时间</span>
+                <span class="table-cell" style="width:28%">位置</span>
+                <span class="table-cell" style="width:14%">风速</span>
+                <span class="table-cell" style="width:14%">气压</span>
+                <span class="table-cell" style="width:20%">等级</span>
+            </div>
+            {% for r in history_rows %}
+            <div class="table-row{% if loop.index is odd %}{% else %} table-row-alt{% endif %}">
+                <span class="table-cell" style="width:24%;color:#e1e4eb">{{ r.time }}</span>
+                <span class="table-cell" style="width:28%;color:#e1e4eb">{{ r.pos }}</span>
+                <span class="table-cell" style="width:14%;color:{{ r.cat_color }}">{{ r.ws }}</span>
+                <span class="table-cell" style="width:14%;color:{{ r.cat_color }}">{{ r.pr }}</span>
+                <span class="table-cell" style="width:20%;color:{{ r.cat_color }}">{{ r.cat }}</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div style="font-size:13px;color:#697080">暂无历史数据</div>
+        {% endif %}
+    </div>
+
+</div>
+
+<!-- ═══ 地图 ═══ -->
+<div id="map-area">
+    <div id="map"></div>
+    <canvas id="overlay-canvas"></canvas>
+    <div class="watermark">@CAPBot - @CelestialAsPeak</div>
+</div>
+
+</div><!-- /card-wrapper -->
+
+<script>
+(function() {
+'use strict';
+
+const PAST = {{ past_json }};
+const FCST = {{ forecast_json }};
+const IS_JMA = {{ 'true' if source == 'JMA' else 'false' }};
+const VIEW = { lo: {{ view_lo }}, hi: {{ view_hi }}, la: {{ view_la }}, ha: {{ view_ha }} };
+const CHART_WINDS = {{ chart_winds }};
+const CHART_PRESS = {{ chart_pressures }};
+const CAT_COLORS = {0:'#787882',1:'#32afff',2:'#32d773',3:'#ffd728',4:'#ffa00a',5:'#f55f0a',6:'#e12828'};
+const CAT_NAMES = {0:'',1:'热带低压',2:'热带风暴',3:'强热带风暴',4:'台风',5:'强台风',6:'超强台风'};
+
+// ── 地图 ──
+var map = null;
+try {
+    map = L.map('map', {
+        zoomControl: false, attributionControl: false,
+        zoomAnimation: false, fadeAnimation: false, markerZoomAnimation: false,
+    });
+} catch(e) {
+    console.error('[台风] L.map 初始化失败:', e, e.stack);
+}
+// ── 标准 L.tileLayer + 瓦片失败重试 ──
+var tileLayer = null;
+try {
+    tileLayer = L.tileLayer('{{ tile_url }}', {
+        maxZoom: 18, minZoom: 0, keepBuffer: 2,
+        updateWhenIdle: true, updateWhenZooming: false,
+    }).addTo(map);
+} catch(e) {
+    console.error('[台风] tileLayer 创建失败:', e, e.stack);
+}
+
+tileLayer.on('tileerror', function(e) {
+    var img = e.tile;
+    if (!img || !img.src) return;
+    var retries = parseInt(img.dataset.retryCount || '0');
+    if (retries >= 3) return;
+    img.dataset.retryCount = String(retries + 1);
+    var delay = (retries + 1) * 1000;
+    var self = this;
+    var coords = img._coords || {};
+    this.fire('tileloadstart', {tile: img, coords: coords, url: img.src});
+    setTimeout(function() {
+        var sep = img.src.indexOf('?') > -1 ? '&' : '?';
+        img.src = img.src.split('?')[0] + sep + '_retry=' + Date.now() + '_' + retries;
+    }, delay);
+});
+
+// ── 画布覆盖层 ──
+const canvas = document.getElementById('overlay-canvas');
+const ctx = canvas.getContext('2d');
+
+function resizeCanvas() {
+    const rect = map.getContainer().getBoundingClientRect();
+    if (rect.width < 1 || rect.height < 1) return false;
+    canvas.width = rect.width;
+    canvas.height = rect.height;
+    return true;
+}
+
+function toPt(lat, lon) {
+    const p = map.latLngToContainerPoint([lat, lon]);
+    return (isFinite(p.x) && isFinite(p.y)) ? p : null;
+}
+
+function kmToPx(lat, lon, km) {
+    const center = toPt(lat, lon);
+    if (!center) return 0;
+    const dLon = km / (111.32 * Math.cos(lat * Math.PI / 180));
+    const east = toPt(lat, lon + dLon);
+    if (!east) return 0;
+    return Math.abs(east.x - center.x);
+}
+
+function drawTrack() {
+    if (map) map.invalidateSize({pan: false, debounceMoveend: true});
+
+    if (!resizeCanvas()) { return; }
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // ── 风圈多边形绘制 ──
+    function drawRadiiPoly(cx, cy, lat, lon, radii, fillColor, edgeColor, dashed) {
+        if (!radii) return;
+        var quads = [[0,90,'NE'],[90,180,'SE'],[180,270,'SW'],[270,360,'NW']];
+        var hasAny = quads.some(function(q) { return radii[q[2]] > 0; });
+        if (!hasAny) return;
+        var polyPts = [];
+        quads.forEach(function(q) {
+            var rk = radii[q[2]];
+            if (!rk || rk <= 0) return;
+            var rp = kmToPx(lat, lon, rk);
+            if (rp < 3) return;
+            for (var deg = q[0]; deg <= q[1]; deg += 10) {
+                var rad = deg * Math.PI / 180;
+                polyPts.push([cx + rp * Math.cos(rad), cy - rp * Math.sin(rad)]);
+            }
+        });
+        if (polyPts.length < 3) return;
+        ctx.beginPath();
+        ctx.moveTo(polyPts[0][0], polyPts[0][1]);
+        for (var i = 1; i < polyPts.length; i++) ctx.lineTo(polyPts[i][0], polyPts[i][1]);
+        ctx.closePath();
+        ctx.fillStyle = fillColor;
+        ctx.fill();
+        if (dashed) ctx.setLineDash([6, 4]);
+        ctx.strokeStyle = edgeColor;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        if (dashed) ctx.setLineDash([]);
+    }
+
+    // 过去路径
+    let pts = [];
+    if (PAST.length > 0) {
+        pts = PAST.map(p => toPt(p.lat, p.lon)).filter(Boolean);
+        if (pts.length < 2) return;
+        const mainColor = CAT_COLORS[PAST[PAST.length-1].cat] || '#969696';
+
+        // 发光底
+        if (pts.length >= 2) {
+            ctx.beginPath();
+            ctx.moveTo(pts[0].x, pts[0].y);
+            for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+            ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+            ctx.lineWidth = 12; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+            ctx.stroke();
+        }
+
+        // 主线
+        if (pts.length >= 2) {
+            ctx.beginPath();
+            ctx.moveTo(pts[0].x, pts[0].y);
+            for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+            ctx.strokeStyle = mainColor;
+            ctx.lineWidth = 4; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+            ctx.stroke();
+        }
+
+        // 风圈绘制（CMA 连续风圈）
+        if (!IS_JMA && pts.length >= 2) {
+            for (var ri = 0; ri < pts.length; ri++) {
+                var rp = PAST[ri];
+                var rpx = pts[ri];
+                drawRadiiPoly(rpx.x, rpx.y, rp.lat, rp.lon, rp.r7, 'rgba(100,180,255,0.15)', 'rgba(100,180,255,0.25)');
+                drawRadiiPoly(rpx.x, rpx.y, rp.lat, rp.lon, rp.r10, 'rgba(255,200,50,0.20)', 'rgba(255,200,50,0.30)');
+                drawRadiiPoly(rpx.x, rpx.y, rp.lat, rp.lon, rp.r12, 'rgba(255,80,0,0.22)', 'rgba(255,80,0,0.35)');
+            }
+        }
+
+        // 路径点
+        for (let i = 0; i < pts.length; i++) {
+            const p = PAST[i];
+            const cp = pts[i];
+            const c = CAT_COLORS[p.cat] || '#969696';
+            const progress = pts.length > 1 ? i / (pts.length - 1) : 1;
+            const r = 3 + progress * 4;
+            for (let gr = Math.ceil(r+4); gr > r; gr--) {
+                ctx.beginPath(); ctx.arc(cp.x, cp.y, gr, 0, Math.PI*2);
+                ctx.fillStyle = c + '30'; ctx.fill();
+            }
+            ctx.beginPath(); ctx.arc(cp.x, cp.y, r, 0, Math.PI*2);
+            ctx.fillStyle = c; ctx.fill();
+            if (i >= pts.length - 3 && p.ts) {
+                ctx.fillStyle = '#9ea2ac';
+                ctx.font = 'bold 10px "Microsoft YaHei"';
+                ctx.textAlign = 'center';
+                ctx.fillText(p.ts, cp.x, cp.y - r - 8);
+            }
+        }
+    }
+
+    // 预报路径
+    if (FCST.length > 0) {
+        const fpts = FCST.map(p => map.latLngToContainerPoint([p.lat, p.lon]));
+        if (PAST.length > 0 && fpts.length > 0) {
+            const lastPt = map.latLngToContainerPoint([PAST[PAST.length-1].lat, PAST[PAST.length-1].lon]);
+            ctx.beginPath(); ctx.moveTo(lastPt.x, lastPt.y); ctx.lineTo(fpts[0].x, fpts[0].y);
+            ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.lineWidth = 2; ctx.stroke();
+        }
+        if (fpts.length >= 2) {
+            const fc = CAT_COLORS[FCST[FCST.length-1].cat] || '#969696';
+            ctx.beginPath(); ctx.moveTo(fpts[0].x, fpts[0].y);
+            for (let i = 1; i < fpts.length; i++) ctx.lineTo(fpts[i].x, fpts[i].y);
+            ctx.strokeStyle = 'rgba(35,35,45,0.8)'; ctx.lineWidth = 7; ctx.lineJoin = 'round'; ctx.stroke();
+            ctx.setLineDash([7, 5]);
+            ctx.beginPath(); ctx.moveTo(fpts[0].x, fpts[0].y);
+            for (let i = 1; i < fpts.length; i++) ctx.lineTo(fpts[i].x, fpts[i].y);
+            ctx.strokeStyle = fc; ctx.lineWidth = 2; ctx.lineJoin = 'round';
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+        for (let i = 0; i < fpts.length; i++) {
+            const p = FCST[i]; const cp = fpts[i];
+            const c = CAT_COLORS[p.cat] || '#969696';
+            const r = 3.5 + Math.min(p.cat || 0, 6) * 0.4;
+            if (IS_JMA) {
+                drawRadiiPoly(cp.x, cp.y, p.lat, p.lon, p.r10, c + '60', c + 'b0', true);
+                drawRadiiPoly(cp.x, cp.y, p.lat, p.lon, p.r12, c + '60', c + 'b0', true);
+            }
+            ctx.beginPath(); ctx.arc(cp.x, cp.y, r, 0, Math.PI*2);
+            ctx.fillStyle = c; ctx.fill();
+            ctx.beginPath(); ctx.arc(cp.x, cp.y, r+2, 0, Math.PI*2);
+            ctx.strokeStyle = c + '80'; ctx.lineWidth = 1; ctx.stroke();
+        }
+    }
+
+    // 当前位置标记
+    if (PAST.length > 0) {
+        const last = PAST[PAST.length-1];
+        const lp = pts[pts.length-1];
+        const mc = CAT_COLORS[last.cat] || '#969696';
+        for (let r = 16; r > 4; r--) {
+            const a = Math.max(0, 55 - (16 - r) * 4);
+            ctx.beginPath(); ctx.arc(lp.x, lp.y, r, 0, Math.PI*2);
+            ctx.fillStyle = mc + a.toString(16).padStart(2, '0'); ctx.fill();
+        }
+        ctx.beginPath(); ctx.arc(lp.x, lp.y, 8, 0, Math.PI*2);
+        ctx.strokeStyle = mc; ctx.lineWidth = 2; ctx.stroke();
+        ctx.beginPath(); ctx.arc(lp.x, lp.y, 5, 0, Math.PI*2);
+        ctx.fillStyle = mc; ctx.fill();
+        ctx.beginPath(); ctx.arc(lp.x, lp.y, 2, 0, Math.PI*2);
+        ctx.fillStyle = 'rgba(255,255,255,0.86)'; ctx.fill();
+    }
+}
+
+// ── 迷你折线图 ──
+function drawMiniChart() {
+    const cvs = document.getElementById('mini-chart');
+    if (!cvs) return;
+    const rect = cvs.parentElement.getBoundingClientRect();
+    const W = rect.width - 4;
+    const H = 55;
+    cvs.width = W * 2; cvs.height = H * 2;
+    cvs.style.width = W + 'px'; cvs.style.height = H + 'px';
+    const cx = cvs.getContext('2d');
+    cx.scale(2, 2);
+    cx.clearRect(0, 0, W, H);
+
+    function drawCurve(values, color, mirror) {
+        if (values.length < 2) return;
+        const mn = Math.min(...values), mx = Math.max(...values);
+        const rng = mx - mn || 1;
+        const step = W / Math.max(values.length - 1, 1);
+        const pts = values.map((v, i) => ({
+            x: i * step,
+            y: mirror ? (v - mn) / rng * H : H - (v - mn) / rng * H,
+        }));
+        cx.beginPath(); cx.moveTo(pts[0].x, H);
+        pts.forEach(p => cx.lineTo(p.x, p.y));
+        cx.lineTo(pts[pts.length-1].x, H); cx.closePath();
+        cx.fillStyle = color.replace('1)', '0.10)'); cx.fill();
+        cx.beginPath(); cx.moveTo(pts[0].x, pts[0].y);
+        pts.forEach(p => cx.lineTo(p.x, p.y));
+        cx.strokeStyle = color; cx.lineWidth = 2; cx.lineJoin = 'round'; cx.stroke();
+        [pts[0], pts[pts.length-1]].forEach(p => {
+            cx.beginPath(); cx.arc(p.x, p.y, 2.5, 0, Math.PI*2);
+            cx.fillStyle = color; cx.fill();
+        });
+    }
+
+    drawCurve(CHART_WINDS, 'rgba(255,150,20,0.85)');
+    drawCurve(CHART_PRESS, 'rgba(100,185,255,0.85)', true);
+}
+
+// ── 就绪调度 ──
+function init() {
+    requestAnimationFrame(function() {
+    requestAnimationFrame(function() {
+        try {
+        const center = [(VIEW.la + VIEW.ha) / 2, (VIEW.lo + VIEW.hi) / 2];
+        if (map) map.setView(center, 4);
+        if (map) map.fitBounds([[VIEW.la, VIEW.lo], [VIEW.ha, VIEW.hi]], {
+            padding: [15, 15],
+            animate: false,
+        });
+
+        if (map && tileLayer) {
+        setupStableTileRender(map, tileLayer, {
+            readyDebounceMs: 500,
+            readyFallbackMs: 20000,
+            readyClass: 'map-ready',
+            debug: false,
+            onReady: function() {
+                drawTrack();
+                drawMiniChart();
+            }
+        });
+        } else {
+            document.body.classList.add('map-ready');
+        }
+        } catch(e) {
+            document.body.classList.add('map-ready');
+        }
+    });
+    });
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+} else {
+    setTimeout(init, 0);
+}
+
+})();
+</script>
+</body>
+</html>

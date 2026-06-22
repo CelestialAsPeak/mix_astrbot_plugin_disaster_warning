@@ -1,0 +1,71 @@
+{
+  "_note": "Mix灾害预警插件 — 运行时配置默认值。键名格式: category/key",
+
+  "enabled": true,
+
+  "web_admin": {
+    "enabled": false,
+    "host": "127.0.0.1",
+    "port": 18331,
+    "password": ""
+  },
+
+  "message_format": {
+    "output_mode": "auto",
+    "max_earthquake_list": 9
+  },
+
+  "event_deduplication": {
+    "ttl_seconds": 300
+  },
+
+  "strategies": {
+    "cenc_fusion": { "enabled": false },
+    "cwa_eew_fusion": { "enabled": false }
+  },
+
+  "target_sessions": [],
+
+  "data_sources": {
+    "fan_studio": { "enabled": true },
+    "wolfx": { "enabled": false },
+    "p2p": { "enabled": false },
+    "global_quake": { "enabled": false },
+    "direct_http": { "enabled": false },
+    "typhoon": { "enabled": false }
+  },
+
+  "weather_config": {
+    "mention_province": false
+  },
+
+  "debug_config": {
+    "startup_silence_duration": 0
+  },
+
+  "local_monitoring": {
+    "enabled": false,
+    "interval": 60
+  },
+
+  "earthquake_filters": {
+    "phivolcs_filter": {
+      "enabled": true,
+      "min_magnitude": 4.5
+    },
+    "csnc_filter": {
+      "enabled": true,
+      "min_magnitude": 4.5
+    },
+    "tmd_filter": {
+      "enabled": true,
+      "min_magnitude": 4.0
+    },
+    "snet_filter": {
+      "enabled": true,
+      "min_magnitude": 0.0
+    }
+  },
+
+  "admin_users": []
+}

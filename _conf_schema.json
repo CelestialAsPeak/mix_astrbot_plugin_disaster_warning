@@ -1,0 +1,171 @@
+{
+  "enabled": {
+    "description": "启用插件",
+    "type": "bool",
+    "hint": "插件总开关",
+    "default": true
+  },
+  "target_sessions": {
+    "description": "推送会话列表",
+    "type": "list",
+    "hint": "接收推送的会话ID列表",
+    "default": []
+  },
+  "data_sources": {
+    "description": "📡 数据源配置",
+    "type": "object",
+    "hint": "数据源开关，至少启用一个",
+    "items": {
+      "fan_studio": {
+        "description": "FAN Studio",
+        "type": "object",
+        "items": {
+          "enabled": { "description": "启用", "type": "bool", "default": true }
+        }
+      },
+      "wolfx": {
+        "description": "Wolfx",
+        "type": "object",
+        "items": {
+          "enabled": { "description": "启用", "type": "bool", "default": true }
+        }
+      },
+      "p2p": {
+        "description": "P2P",
+        "type": "object",
+        "items": {
+          "enabled": { "description": "启用", "type": "bool", "default": true }
+        }
+      },
+      "global_quake": {
+        "description": "Global Quake",
+        "type": "object",
+        "items": {
+          "enabled": { "description": "启用", "type": "bool", "default": true }
+        }
+      },
+      "direct_http": {
+        "description": "Direct HTTP",
+        "type": "object",
+        "items": {
+          "enabled": { "description": "启用", "type": "bool", "default": true }
+        }
+      },
+      "typhoon": {
+        "description": "台风",
+        "type": "object",
+        "items": {
+          "enabled": { "description": "启用", "type": "bool", "default": true }
+        }
+      }
+    }
+  },
+  "strategies": {
+    "description": "🎯 融合策略配置",
+    "type": "object",
+    "items": {
+      "cenc_fusion": {
+        "description": "CENC 融合",
+        "type": "object",
+        "items": {
+          "enabled": { "description": "启用", "type": "bool", "default": false }
+        }
+      },
+      "cwa_eew_fusion": {
+        "description": "CWA EEW 融合",
+        "type": "object",
+        "items": {
+          "enabled": { "description": "启用", "type": "bool", "default": false }
+        }
+      }
+    }
+  },
+  "web_admin": {
+    "description": "🌐 Web 管理界面",
+    "type": "object",
+    "items": {
+      "enabled": { "description": "启用", "type": "bool", "default": false },
+      "host": { "description": "监听地址", "type": "string", "default": "127.0.0.1" },
+      "port": { "description": "端口", "type": "int", "default": 18331 },
+      "password": { "description": "密码", "type": "string", "default": "" }
+    }
+  },
+  "message_format": {
+    "description": "🎨 消息格式配置",
+    "type": "object",
+    "hint": "自定义预警消息的视觉呈现方式",
+    "items": {
+      "include_map": {
+        "description": "是否包含地图图片",
+        "type": "bool",
+        "hint": "适用于地震信息，会在消息末尾附加地图瓦片渲染出的图片",
+        "default": true
+      },
+      "map_source": {
+        "description": "地图瓦片源",
+        "type": "string",
+        "options": [
+          "高德地图",
+          "PetalMap矢量图亮",
+          "PetalMap矢量图暗",
+          "ArcGIS卫星影像",
+          "ArcGIS地形图",
+          "ArcGIS山影图",
+          "中科星图卫星影像"
+        ],
+        "default": "PetalMap矢量图亮",
+        "hint": "选择地图渲染使用的瓦片源"
+      },
+      "map_zoom_level": {
+        "description": "地图缩放级别",
+        "type": "int",
+        "hint": "范围0-18，数值越大视野越小",
+        "default": 4,
+        "slider": { "min": 0, "max": 18, "step": 1 }
+      },
+      "playwright_mode": {
+        "description": "Playwright 模式",
+        "type": "string",
+        "options": ["local", "remote"],
+        "default": "local",
+        "hint": "local=本地浏览器, remote=远程浏览器服务"
+      }
+    }
+  },
+  "admin_users": {
+    "description": "管理员列表",
+    "type": "list",
+    "hint": "管理员用户ID列表",
+    "default": []
+  },
+  "weather_config": {
+    "description": "☁️ 气象预警配置",
+    "type": "object",
+    "items": {
+      "mention_province": {
+        "description": "在气象预警中提及省份",
+        "type": "bool",
+        "default": false
+      }
+    }
+  },
+  "debug_config": {
+    "description": "🔧 调试配置",
+    "type": "object",
+    "items": {
+      "startup_silence_duration": {
+        "description": "启动静默期（秒）",
+        "type": "int",
+        "default": 0
+      }
+    }
+  },
+  "local_monitoring": {
+    "description": "📍 本地监控",
+    "type": "object",
+    "items": {
+      "enabled": { "description": "启用", "type": "bool", "default": false },
+      "interval": { "description": "轮询间隔（秒）", "type": "int", "default": 60 }
+    }
+  }
+}

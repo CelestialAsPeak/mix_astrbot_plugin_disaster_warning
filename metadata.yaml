@@ -1,0 +1,7 @@
+name: mix_astrbot_plugin_disaster_warning
+display_name: Mix灾害预警
+desc: 多数据源灾害预警AstrBot插件（重构版），支持地震、海啸、台风、气象预警实时接入与推送。
+version: v0.1.0
+author: DBJD-CR & Aloys233 & CelestialAsPeak
+repo: https://github.com/CelestialAsPeak/mix_astrbot_plugin_disaster_warning
+astrbot_version: ">=4.11.2"
