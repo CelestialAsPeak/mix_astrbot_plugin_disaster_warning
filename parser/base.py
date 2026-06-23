@@ -18,9 +18,9 @@ except ImportError:
     import logging as logger
 
 try:
-    from utils.time import parse_ts
-except ImportError:
     from ..utils.time import parse_ts
+except ImportError:
+    from utils.time import parse_ts
 
 
 class BaseParser:

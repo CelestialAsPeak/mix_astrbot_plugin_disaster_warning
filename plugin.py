@@ -33,7 +33,7 @@ try:
     from .broker.websocket import WebSocketManager
     from .broker.http_poller import HttpPollManager
     from .message.push import SessionSender, PushExecutionService, PushOrchestrator
-    from .domain.models import EewEvent
+    from .domain.models import EewEvent, EventEnvelope
     from .message.presenters import present, present_eew, present_earthquake_report, WEATHER_TYPE_MAP, LEVEL_COLORS
     from .message.browser import BrowserManager
     from .message.render.typhoon_map_renderer import TyphoonMapRenderer
@@ -57,7 +57,7 @@ except ImportError:
     from broker.websocket import WebSocketManager
     from broker.http_poller import HttpPollManager
     from message.push import SessionSender, PushExecutionService, PushOrchestrator
-    from domain.models import EewEvent
+    from domain.models import EewEvent, EventEnvelope
     from message.presenters import present, present_eew, present_earthquake_report, WEATHER_TYPE_MAP, LEVEL_COLORS
     from message.browser import BrowserManager
     from message.render.typhoon_map_renderer import TyphoonMapRenderer
@@ -145,6 +145,12 @@ _PLUGIN_HELP = """🚨 Mix灾害预警使用说明
   /灾害预警统计        事件统计
   /灾害预警统计清除    清除统计（管理）
   /灾害预警配置 查看   查看配置
+
+📋 多群组:
+  /灾害预警群组                查看群组列表
+  /灾害预警群组 <群组ID>       查看群组详情
+  /灾害预警群组 <群组ID> set <源> <阈值>  设置阈值
+  /灾害预警群组 <群组ID> clear [源]       清除覆盖
 
 📋 查询:
   /地震列表 <源> <数量>  地震列表（默认 cenc 9条）
@@ -266,6 +272,7 @@ class MixDisasterWarningPlugin(Star):
                 stats_manager=self.stats_manager,
                 database_manager=self.database,
                 fusion=self._fusion,
+                session_manager=self.session_config_manager,
             )
 
             router = MessageRouter(pipeline=self.pipeline)
@@ -529,14 +536,49 @@ class MixDisasterWarningPlugin(Star):
         return await self._orchestrator.push_event(envelope)
 
     async def _typhoon_push_adapter(self, envelope) -> None:
-        """台风推送适配器 — 将 TyhoonEvent envelope 送入 pipeline。"""
+        """台风推送适配器 — 渲染路径图后送入 pipeline。"""
         if self._in_silence_period():
             return
-        if self.pipeline:
+        if not self.pipeline:
+            return
+
+        # 渲染台风路径图
+        img_b64 = None
+        try:
+            from .domain.models import TyphoonEvent
+        except ImportError:
+            from domain.models import TyphoonEvent
+        if isinstance(envelope.event, TyphoonEvent) and self._typhoon_renderer:
             try:
-                await self.pipeline.handle(envelope)
+                img_path = os.path.join(
+                    self._temp_dir,
+                    f"typhoon_push_{envelope.event.code}_{int(__import__('time').time())}.png",
+                )
+                result = await self._typhoon_renderer.render(envelope.event, img_path)
+                if result and os.path.exists(result):
+                    with open(result, "rb") as f:
+                        img_b64 = base64.b64encode(f.read()).decode()
+                    try:
+                        os.unlink(result)
+                    except Exception:
+                        pass
             except Exception as e:
-                logger.error(f"[台风] pipeline 处理失败: {e}")
+                logger.warning(f"[台风] 推送图渲染异常: {e}")
+
+        # 把图片塞进 envelope metadata
+        if img_b64:
+            envelope = EventEnvelope(
+                identity=envelope.identity,
+                event=envelope.event,
+                received_at=envelope.received_at,
+                payload=envelope.payload,
+                metadata={**envelope.metadata, "_typhoon_image": img_b64},
+            )
+
+        try:
+            await self.pipeline.handle(envelope)
+        except Exception as e:
+            logger.error(f"[台风] pipeline 处理失败: {e}")
 
     async def _ws_message_handler(self, name: str, raw_data: str | bytes) -> None:
         """WebSocket 消息处理器 — 组级→源级路由。"""
@@ -884,6 +926,109 @@ class MixDisasterWarningPlugin(Star):
             yield event.plain_result(f"全局配置: {dict(self.config)}")
         else:
             yield event.plain_result("用法: /灾害预警配置 查看")
+
+    # ═══════════════════ 命令: 群组管理 ═══════════════════
+
+    @filter.regex(r"^/灾害预警群组$")
+    async def groups_list_cmd(self, event: AstrMessageEvent):
+        """查看全部群组配置。"""
+        if not await self._is_admin(event):
+            yield event.plain_result("❌ 仅管理员")
+            return
+        if not self.session_config_manager:
+            yield event.plain_result("❌ 群组配置管理器未就绪")
+            return
+        groups = self.session_config_manager.list_groups()
+        if not groups:
+            yield event.plain_result("📢 未配置任何群组\n在配置文件中添加 groups 即可启用多群推送")
+            return
+        lines = ["📢 群组列表"]
+        for gid in groups:
+            sessions = self.session_config_manager.get_group_sessions(gid)
+            gf = self.session_config_manager.get_group_filters(gid)
+            filter_count = sum(1 for v in gf.values() if isinstance(v, dict)) if isinstance(gf, dict) else 0
+            lines.append(f"  {gid}: {len(sessions)} 会话, {filter_count} 个阈值覆盖")
+        yield event.plain_result("\n".join(lines))
+
+    @filter.regex(r"^/灾害预警群组\s+(\S+)(?:\s|$)")
+    async def groups_detail_cmd(self, event: AstrMessageEvent, group_id: str):
+        """查看指定群组详情。"""
+        if not await self._is_admin(event):
+            yield event.plain_result("❌ 仅管理员")
+            return
+        if not self.session_config_manager:
+            yield event.plain_result("❌ 群组配置管理器未就绪")
+            return
+
+        # 检查群组是否存在
+        groups = self.session_config_manager.list_groups()
+        if group_id not in groups:
+            yield event.plain_result(f"❌ 未找到群组: {group_id}，可用: {', '.join(groups.keys())}")
+            return
+
+        # 合并 override 显示完整配置
+        info = self.session_config_manager.format_group_info(group_id)
+        yield event.plain_result(info)
+
+    @filter.regex(r"^/灾害预警群组\s+(\S+)\s+set\s+(\S+)\s+([\d.]+)(?:\s|$)")
+    async def groups_set_threshold_cmd(
+        self, event: AstrMessageEvent,
+        group_id: str, source_id: str, magnitude: str,
+    ):
+        """设置群组内某数据源的震级阈值。
+        用法: /灾害预警群组 A set jma_fanstudio 6.0
+        """
+        if not await self._is_admin(event):
+            yield event.plain_result("❌ 仅管理员")
+            return
+        if not self.session_config_manager:
+            yield event.plain_result("❌ 群组配置管理器未就绪")
+            return
+
+        try:
+            mag = float(magnitude)
+        except ValueError:
+            yield event.plain_result(f"❌ 无效震级: {magnitude}")
+            return
+
+        groups = self.session_config_manager.list_groups()
+        if group_id not in groups:
+            yield event.plain_result(f"❌ 未找到群组: {group_id}，可用: {', '.join(groups.keys())}")
+            return
+
+        self.session_config_manager.set_group_filter(
+            group_id=group_id, source_id=source_id, min_magnitude=mag,
+        )
+        yield event.plain_result(
+            f"✅ 群组 {group_id} 的 {source_id} 阈值已设为 M{mag}+"
+        )
+
+    @filter.regex(r"^/灾害预警群组\s+(\S+)\s+clear(?:\s+(\S+))?(?:\s|$)")
+    async def groups_clear_threshold_cmd(
+        self, event: AstrMessageEvent,
+        group_id: str, source_id: str = None,
+    ):
+        """清除群组阈值覆盖。
+        用法: /灾害预警群组 A clear              全部清除
+              /灾害预警群组 A clear jma_fanstudio  仅清除该源
+        """
+        if not await self._is_admin(event):
+            yield event.plain_result("❌ 仅管理员")
+            return
+        if not self.session_config_manager:
+            yield event.plain_result("❌ 群组配置管理器未就绪")
+            return
+
+        groups = self.session_config_manager.list_groups()
+        if group_id not in groups:
+            yield event.plain_result(f"❌ 未找到群组: {group_id}")
+            return
+
+        self.session_config_manager.clear_group_filter(group_id, source_id)
+        if source_id:
+            yield event.plain_result(f"✅ 已清除群组 {group_id} 的 {source_id} 阈值覆盖")
+        else:
+            yield event.plain_result(f"✅ 已清除群组 {group_id} 的所有阈值覆盖")
 
     # ═══════════════════ 命令: 查询 ═══════════════════
 

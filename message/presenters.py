@@ -17,12 +17,12 @@ except ImportError:
     import logging as logger
 
 try:
-    from domain.models import (
+    from ..domain.models import (
         EewEvent, EarthquakeReport, TsunamiEvent,
         WeatherEvent, TyphoonEvent, EventEnvelope,
     )
 except ImportError:
-    from ..domain.models import (
+    from domain.models import (
         EewEvent, EarthquakeReport, TsunamiEvent,
         WeatherEvent, TyphoonEvent, EventEnvelope,
     )
@@ -124,13 +124,15 @@ _SOURCE_NAMES: dict[str, str] = {
 
 
 def _make_source_title(source_id: str, event_label: str) -> str:
-    """生成标题：[CODE/机构名 事件标签]"""
+    """生成标题：[CODE/机构名 事件标签] 或 [机构名 事件标签]"""
     info = _SOURCE_DISPLAY_INFO.get(source_id)
     code = info["code"] if info else ""
     name = info["name"] if info else ""
     if code and name:
         return f"[{code}/{name} {event_label}]"
-    # 无 code → 用 _SOURCE_NAMES 的短名
+    if name:
+        return f"[{name} {event_label}]"
+    # 兜底：用 _SOURCE_NAMES 的短名
     short = _SOURCE_NAMES.get(source_id, source_id)
     return f"[{short} {event_label}]"
 
@@ -332,7 +334,7 @@ def _shindo_label_str(shindo: float) -> str:
 
 # ── 台风自动推送格式（‖ 前缀风格） ──
 
-_SEP_LINE = "─" * 22
+_SEP_LINE = "=" * 19
 
 _SOURCE_PREFIX = {
     "cma_typhoon": "CMA",

@@ -21,11 +21,11 @@ except ImportError:
     import logging as logger
 
 try:
-    from parser.registry import ParserRegistry
-    from pipeline.pipeline import EventPipeline
-except ImportError:
     from ..parser.registry import ParserRegistry
     from ..pipeline.pipeline import EventPipeline
+except ImportError:
+    from parser.registry import ParserRegistry
+    from pipeline.pipeline import EventPipeline
 
 
 class MessageRouter:

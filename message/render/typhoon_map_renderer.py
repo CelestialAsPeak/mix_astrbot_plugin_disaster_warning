@@ -24,14 +24,14 @@ except ImportError:
     import logging as logger
 
 try:
-    from domain.models import TyphoonEvent, TyphoonTrackPoint
-except ImportError:
     from ...domain.models import TyphoonEvent, TyphoonTrackPoint
+except ImportError:
+    from domain.models import TyphoonEvent, TyphoonTrackPoint
 
 try:
-    from utils.map_tile_sources import get_tile_url_js
-except ImportError:
     from ...utils.map_tile_sources import get_tile_url_js
+except ImportError:
+    from utils.map_tile_sources import get_tile_url_js
 
 
 # ── 常量 ──

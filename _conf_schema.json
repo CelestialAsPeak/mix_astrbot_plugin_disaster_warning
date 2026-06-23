@@ -1,93 +1,816 @@
 {
   "enabled": {
-    "description": "启用插件",
+    "description": "启用灾害预警插件",
     "type": "bool",
-    "hint": "插件总开关",
+    "hint": "内置的插件总开关",
     "default": true
   },
-  "target_sessions": {
-    "description": "推送会话列表",
+  "admin_users": {
+    "description": "插件管理员列表",
     "type": "list",
-    "hint": "接收推送的会话ID列表",
+    "hint": "输入用户ID（QQ号等）。这些用户拥有管理插件的高级权限（如设置群组、修改配置等）",
     "default": []
+  },
+  "target_sessions": {
+    "description": "推送会话列表（未配置 groups 时使用）",
+    "type": "list",
+    "hint": "未配置多群组时的默认推送目标",
+    "default": []
+  },
+  "groups": {
+    "description": "📢 多群组推送配置",
+    "type": "object",
+    "hint": "每个群组独立设置推送会话和阈值过滤。\n键=群组ID，值={sessions:[会话ID], earthquake_filters:{数据源:{阈值}}}\n也可用命令 /灾害预警群组 管理",
+    "default": {},
+    "items": {}
+  },
+  "offline_notification_sessions": {
+    "description": "离线通知接收会话列表",
+    "type": "list",
+    "hint": "用于接收数据源离线通知，留空时将沿用推送会话列表",
+    "default": []
+  },
+  "display_timezone": {
+    "description": "默认显示时区",
+    "type": "string",
+    "hint": "所有预警消息中时间显示的默认时区。格式示例：UTC+8, Asia/Shanghai",
+    "default": "UTC+8"
   },
   "data_sources": {
     "description": "📡 数据源配置",
     "type": "object",
-    "hint": "数据源开关，至少启用一个",
+    "hint": "支持多API服务细粒度控制",
     "items": {
       "fan_studio": {
-        "description": "FAN Studio",
+        "description": "FAN Studio WebSocket 数据源",
         "type": "object",
+        "hint": "FAN Studio数据源总开关",
         "items": {
-          "enabled": { "description": "启用", "type": "bool", "default": true }
-        }
-      },
-      "wolfx": {
-        "description": "Wolfx",
-        "type": "object",
-        "items": {
-          "enabled": { "description": "启用", "type": "bool", "default": true }
+          "enabled": {
+            "description": "启用FAN Studio数据源",
+            "type": "bool",
+            "default": true
+          },
+          "china_earthquake_warning": {
+            "description": "中国地震网地震预警",
+            "type": "bool",
+            "default": false,
+            "hint": "通过FAN Studio接收中国地震网地震预警信息"
+          },
+          "china_earthquake_warning_provincial": {
+            "description": "中国地震网地震预警(省级)",
+            "type": "bool",
+            "default": true
+          },
+          "taiwan_cwa_earthquake": {
+            "description": "台湾中央气象署：强震即时警报",
+            "type": "bool",
+            "default": true
+          },
+          "taiwan_cwa_report": {
+            "description": "台湾中央气象署：地震报告",
+            "type": "bool",
+            "default": true
+          },
+          "china_cenc_earthquake": {
+            "description": "中国地震台网（CENC）：地震测定",
+            "type": "bool",
+            "default": true
+          },
+          "japan_jma_eew": {
+            "description": "日本气象厅（JMA）：紧急地震速报",
+            "type": "bool",
+            "default": false
+          },
+          "usgs_earthquake": {
+            "description": "美国地质调查局（USGS）：地震测定",
+            "type": "bool",
+            "default": true
+          },
+          "china_weather_alarm": {
+            "description": "中国气象局：气象预警",
+            "type": "bool",
+            "default": true
+          },
+          "china_tsunami": {
+            "description": "海啸预警信息",
+            "type": "bool",
+            "default": true
+          },
+          "emsc_earthquake": {
+            "description": "EMSC 欧洲地中海地震中心",
+            "type": "bool",
+            "default": false
+          },
+          "fssn_earthquake": {
+            "description": "FAN Studio 自有地震速报",
+            "type": "bool",
+            "default": false
+          },
+          "kma_earthquake": {
+            "description": "KMA 韩国气象厅：地震测定",
+            "type": "bool",
+            "default": false
+          },
+          "usp_earthquake": {
+            "description": "USP 巴西圣保罗大学地震中心",
+            "type": "bool",
+            "default": false
+          },
+          "gfz_earthquake": {
+            "description": "GFZ 德国地学研究中心",
+            "type": "bool",
+            "default": false
+          },
+          "bcsf_earthquake": {
+            "description": "BCSF 法国中央地震研究所",
+            "type": "bool",
+            "default": false
+          },
+          "hko_earthquake": {
+            "description": "香港天文台（HKO）：地震测定",
+            "type": "bool",
+            "default": false
+          },
+          "ningxia_earthquake": {
+            "description": "宁夏地震台网",
+            "type": "bool",
+            "default": false
+          },
+          "guangxi_earthquake": {
+            "description": "广西地震台网",
+            "type": "bool",
+            "default": false
+          },
+          "shanxi_earthquake": {
+            "description": "山西地震台网",
+            "type": "bool",
+            "default": false
+          },
+          "beijing_earthquake": {
+            "description": "北京地震台网",
+            "type": "bool",
+            "default": false
+          },
+          "yunnan_earthquake": {
+            "description": "云南地震台网",
+            "type": "bool",
+            "default": false
+          },
+          "us_shakealert_eew": {
+            "description": "ShakeAlert 美国西海岸地震预警",
+            "type": "bool",
+            "default": false
+          },
+          "kma_eew": {
+            "description": "KMA 韩国气象厅：紧急地震速报",
+            "type": "bool",
+            "default": false
+          }
         }
       },
       "p2p": {
-        "description": "P2P",
+        "description": "P2P地震情報 WebSocket 数据源",
         "type": "object",
         "items": {
-          "enabled": { "description": "启用", "type": "bool", "default": true }
+          "enabled": {
+            "description": "启用P2P数据源",
+            "type": "bool",
+            "default": true
+          },
+          "japan_jma_eew": {
+            "description": "JMA：緊急地震速報（警報）",
+            "type": "bool",
+            "default": true
+          },
+          "japan_jma_earthquake": {
+            "description": "JMA：地震情報",
+            "type": "bool",
+            "default": true
+          },
+          "japan_jma_tsunami": {
+            "description": "JMA：津波予報",
+            "type": "bool",
+            "default": true
+          }
+        }
+      },
+      "wolfx": {
+        "description": "Wolfx API 数据源",
+        "type": "object",
+        "items": {
+          "enabled": {
+            "description": "启用Wolfx数据源",
+            "type": "bool",
+            "default": true
+          },
+          "japan_jma_eew": {
+            "description": "JMA：緊急地震速報",
+            "type": "bool",
+            "default": true
+          },
+          "china_cenc_eew": {
+            "description": "CENC：地震预警",
+            "type": "bool",
+            "default": false
+          },
+          "taiwan_cwa_eew": {
+            "description": "CWA：地震预警",
+            "type": "bool",
+            "default": true
+          },
+          "japan_jma_earthquake": {
+            "description": "JMA：地震情報",
+            "type": "bool",
+            "default": false
+          },
+          "china_cenc_earthquake": {
+            "description": "CENC：地震测定",
+            "type": "bool",
+            "default": true
+          }
         }
       },
       "global_quake": {
-        "description": "Global Quake",
+        "description": "Global Quake 服务器推送",
         "type": "object",
         "items": {
-          "enabled": { "description": "启用", "type": "bool", "default": true }
+          "enabled": {
+            "description": "启用Global Quake",
+            "type": "bool",
+            "hint": "连接到GlobalQuake Monitor服务器获取全球地震实时数据",
+            "default": true
+          }
         }
       },
       "direct_http": {
-        "description": "Direct HTTP",
+        "description": "HTTP 轮询地震数据源",
         "type": "object",
         "items": {
-          "enabled": { "description": "启用", "type": "bool", "default": true }
+          "enabled": {
+            "description": "启用HTTP轮询数据源",
+            "type": "bool",
+            "default": false
+          },
+          "geonet": {
+            "description": "GeoNet 新西兰地震",
+            "type": "bool",
+            "default": false
+          },
+          "nrcan": {
+            "description": "NRCan 加拿大地震",
+            "type": "bool",
+            "default": false
+          },
+          "usgs_weekly": {
+            "description": "USGS 全球地震周报",
+            "type": "bool",
+            "default": false
+          },
+          "funvisis": {
+            "description": "FUNVISIS 委内瑞拉地震",
+            "type": "bool",
+            "default": false
+          },
+          "cenais": {
+            "description": "CENAIS 古巴地震",
+            "type": "bool",
+            "default": false
+          },
+          "icl": {
+            "description": "ICL 成都高新减灾研究所",
+            "type": "bool",
+            "default": false,
+            "hint": "仅手动查询，不自动推送"
+          },
+          "tmd": {
+            "description": "TMD 泰国地震",
+            "type": "bool",
+            "default": false
+          },
+          "csnc": {
+            "description": "CSNC 智利地震",
+            "type": "bool",
+            "default": false
+          },
+          "phivolcs": {
+            "description": "PHIVOLCS 菲律宾地震",
+            "type": "bool",
+            "default": false
+          },
+          "snet": {
+            "description": "NIED S-Net 海底震度分布",
+            "type": "bool",
+            "default": false
+          }
         }
       },
       "typhoon": {
-        "description": "台风",
+        "description": "🌀 台风路径数据源",
         "type": "object",
         "items": {
-          "enabled": { "description": "启用", "type": "bool", "default": true }
+          "enabled": {
+            "description": "启用台风数据源",
+            "type": "bool",
+            "default": false
+          },
+          "manual_only": {
+            "description": "仅手动查询模式",
+            "type": "bool",
+            "default": false,
+            "hint": "开启后台风路径更新不会自动推送到群，只能通过 /台风 命令手动查询"
+          },
+          "cma_typhoon": {
+            "description": "中央气象台(CMA)台风路径",
+            "type": "bool",
+            "default": false
+          },
+          "jma_typhoon": {
+            "description": "日本气象厅(JMA)台风情报",
+            "type": "bool",
+            "default": false
+          }
         }
       }
     }
   },
-  "strategies": {
-    "description": "🎯 融合策略配置",
+  "earthquake_filters": {
+    "description": "🔍 地震信息过滤配置",
     "type": "object",
+    "hint": "根据不同数据源类型配置震级/烈度/震度阈值。群组级可单独覆盖",
     "items": {
-      "cenc_fusion": {
-        "description": "CENC 融合",
+      "keyword_filter": {
+        "description": "关键词过滤器",
         "type": "object",
+        "hint": "适用于所有地震信息，支持黑名单和白名单",
         "items": {
-          "enabled": { "description": "启用", "type": "bool", "default": false }
+          "enabled": { "description": "启用", "type": "bool", "default": false },
+          "blacklist": {
+            "description": "黑名单关键词",
+            "type": "list",
+            "hint": "包含这些关键词的地震信息将被过滤",
+            "default": []
+          },
+          "whitelist": {
+            "description": "白名单关键词",
+            "type": "list",
+            "hint": "设置后只有包含这些关键词的地震信息才会推送。留空不启用白名单",
+            "default": []
+          }
         }
       },
-      "cwa_eew_fusion": {
-        "description": "CWA EEW 融合",
+      "intensity_filter": {
+        "description": "震级/烈度过滤器（通用）",
+        "type": "object",
+        "hint": "OR逻辑：震级够 或 烈度够 任一满足即可推送",
+        "items": {
+          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "hint": "震级≥此值时推送（OR逻辑：震级和烈度满足一个即可）",
+            "default": 2.0,
+            "slider": { "min": 0, "max": 10, "step": 0.1 }
+          },
+          "min_intensity": {
+            "description": "最小烈度（中国标准）",
+            "type": "float",
+            "hint": "烈度≥此值时推送，烈度=震中预估烈度",
+            "default": 4.0,
+            "slider": { "min": 0, "max": 12, "step": 0.1 }
+          }
+        }
+      },
+      "magnitude_only_filter": {
+        "description": "USGS等仅震级过滤器",
         "type": "object",
         "items": {
-          "enabled": { "description": "启用", "type": "bool", "default": false }
+          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 4.5,
+            "slider": { "min": 0, "max": 10, "step": 0.1 }
+          }
+        }
+      },
+      "global_quake_filter": {
+        "description": "Global Quake专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 4.5,
+            "slider": { "min": 0, "max": 10, "step": 0.1 }
+          },
+          "min_intensity": {
+            "description": "最小烈度",
+            "type": "float",
+            "default": 5.0,
+            "slider": { "min": 0, "max": 12, "step": 0.1 }
+          }
+        }
+      },
+      "emsc_filter": {
+        "description": "EMSC 专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 4.5,
+            "slider": { "min": 0, "max": 10, "step": 0.1 }
+          }
+        }
+      },
+      "gfz_filter": {
+        "description": "GFZ 专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 4.5,
+            "slider": { "min": 0, "max": 10, "step": 0.1 }
+          }
+        }
+      },
+      "bcsf_filter": {
+        "description": "BCSF 专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 4.5,
+            "slider": { "min": 0, "max": 10, "step": 0.1 }
+          }
+        }
+      },
+      "usp_filter": {
+        "description": "USP 专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 4.5,
+            "slider": { "min": 0, "max": 10, "step": 0.1 }
+          }
+        }
+      },
+      "hko_filter": {
+        "description": "HKO 专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 4.5,
+            "slider": { "min": 0, "max": 10, "step": 0.1 }
+          }
+        }
+      },
+      "fssn_filter": {
+        "description": "FSSN 专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 4.5,
+            "slider": { "min": 0, "max": 10, "step": 0.1 }
+          }
+        }
+      },
+      "kma_filter": {
+        "description": "KMA 专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 4.5,
+            "slider": { "min": 0, "max": 10, "step": 0.1 }
+          }
+        }
+      },
+      "sa_filter": {
+        "description": "ShakeAlert 专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 4.5,
+            "slider": { "min": 0, "max": 10, "step": 0.1 }
+          }
+        }
+      },
+      "kma_eew_filter": {
+        "description": "KMA 韩国预警专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 4.5,
+            "slider": { "min": 0, "max": 10, "step": 0.1 }
+          }
+        }
+      },
+      "ningxia_filter": {
+        "description": "宁夏地震台网专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 3.0,
+            "slider": { "min": 0, "max": 10, "step": 0.1 }
+          }
+        }
+      },
+      "guangxi_filter": {
+        "description": "广西地震台网专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 3.0,
+            "slider": { "min": 0, "max": 10, "step": 0.1 }
+          }
+        }
+      },
+      "shanxi_filter": {
+        "description": "山西地震台网专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 3.0,
+            "slider": { "min": 0, "max": 10, "step": 0.1 }
+          }
+        }
+      },
+      "beijing_filter": {
+        "description": "北京地震台网专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 3.0,
+            "slider": { "min": 0, "max": 10, "step": 0.1 }
+          }
+        }
+      },
+      "yunnan_filter": {
+        "description": "云南地震台网专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 3.0,
+            "slider": { "min": 0, "max": 10, "step": 0.1 }
+          }
+        }
+      },
+      "geonet_filter": {
+        "description": "GeoNet 新西兰专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 4.5,
+            "slider": { "min": 0, "max": 10, "step": 0.1 }
+          },
+          "min_intensity": {
+            "description": "最小烈度(MMI)",
+            "type": "float",
+            "default": 5.0,
+            "slider": { "min": 0, "max": 12, "step": 0.1 }
+          }
+        }
+      },
+      "nrcan_filter": {
+        "description": "NRCan 加拿大专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 4.5,
+            "slider": { "min": 0, "max": 10, "step": 0.1 }
+          }
+        }
+      },
+      "usgs_weekly_filter": {
+        "description": "USGS 全球周报专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 4.5,
+            "slider": { "min": 0, "max": 10, "step": 0.1 }
+          }
+        }
+      },
+      "funvisis_filter": {
+        "description": "FUNVISIS 委内瑞拉专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 3.0,
+            "slider": { "min": 0, "max": 10, "step": 0.1 }
+          }
+        }
+      },
+      "cenais_filter": {
+        "description": "CENAIS 古巴专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 3.0,
+            "slider": { "min": 0, "max": 10, "step": 0.1 }
+          }
+        }
+      },
+      "icl_filter": {
+        "description": "ICL 成都高新减灾研究所专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 3.0,
+            "slider": { "min": 0, "max": 10, "step": 0.1 }
+          }
+        }
+      },
+      "snet_filter": {
+        "description": "S-Net 海底震度专用过滤器",
+        "type": "object",
+        "hint": "基于最大震度过滤（日本震度标准）",
+        "items": {
+          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "min_magnitude": {
+            "description": "最小触发震度",
+            "type": "float",
+            "hint": "有测站震度大于等于此值时推送",
+            "default": 0.5,
+            "slider": { "min": 0.0, "max": 7.0, "step": 0.1 }
+          }
+        }
+      },
+      "sc_eew_filter": {
+        "description": "四川 EEW 专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 3.0,
+            "slider": { "min": 0, "max": 10, "step": 0.1 }
+          }
+        }
+      },
+      "fj_eew_filter": {
+        "description": "福建 EEW 专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 3.0,
+            "slider": { "min": 0, "max": 10, "step": 0.1 }
+          }
+        }
+      },
+      "cq_eew_filter": {
+        "description": "重庆 EEW 专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 3.0,
+            "slider": { "min": 0, "max": 10, "step": 0.1 }
+          }
         }
       }
     }
   },
-  "web_admin": {
-    "description": "🌐 Web 管理界面",
+  "push_frequency_control": {
+    "description": "⏱️ 推送频率控制",
     "type": "object",
+    "hint": "控制地震预警类型消息的推送频率，避免刷屏",
     "items": {
-      "enabled": { "description": "启用", "type": "bool", "default": false },
-      "host": { "description": "监听地址", "type": "string", "default": "127.0.0.1" },
-      "port": { "description": "端口", "type": "int", "default": 18331 },
-      "password": { "description": "密码", "type": "string", "default": "" }
+      "cea_cwa_report_n": {
+        "description": "CEA/CWA：每N报推送一次",
+        "type": "int",
+        "hint": "1表示每次都推送",
+        "default": 1,
+        "slider": { "min": 1, "max": 10, "step": 1 }
+      },
+      "jma_report_n": {
+        "description": "JMA：每N报推送一次",
+        "type": "int",
+        "hint": "M5.0-7.0的地震一分钟内可能推送5-20次",
+        "default": 3,
+        "slider": { "min": 1, "max": 20, "step": 1 }
+      },
+      "gq_report_n": {
+        "description": "Global Quake：每N报推送一次",
+        "type": "int",
+        "default": 5,
+        "slider": { "min": 1, "max": 20, "step": 1 }
+      },
+      "final_report_always_push": {
+        "description": "最终报是否总是推送",
+        "type": "bool",
+        "default": true
+      },
+      "ignore_non_final_reports": {
+        "description": "忽略非最终报（仅JMA）",
+        "type": "bool",
+        "default": false
+      }
+    }
+  },
+  "local_monitoring": {
+    "description": "📍 本地烈度监控配置",
+    "type": "object",
+    "hint": "配置机器人所在位置，计算本地预估烈度",
+    "items": {
+      "enabled": {
+        "description": "启用本地监控",
+        "type": "bool",
+        "default": false
+      },
+      "latitude": {
+        "description": "本地纬度",
+        "type": "float",
+        "default": 39.9042,
+        "slider": { "min": -90.0, "max": 90.0, "step": 0.0001 }
+      },
+      "longitude": {
+        "description": "本地经度",
+        "type": "float",
+        "default": 116.4074,
+        "slider": { "min": -180.0, "max": 180.0, "step": 0.0001 }
+      },
+      "place_name": {
+        "description": "本地地名",
+        "type": "string",
+        "default": "本地"
+      },
+      "strict_mode": {
+        "description": "严格过滤模式",
+        "type": "bool",
+        "hint": "开启后本地烈度未达标时忽略所有通知",
+        "default": false
+      },
+      "intensity_threshold": {
+        "description": "通知阈值(烈度)",
+        "type": "float",
+        "default": 4.0,
+        "slider": { "min": 0, "max": 12, "step": 0.1 }
+      }
     }
   },
   "message_format": {
@@ -96,9 +819,8 @@
     "hint": "自定义预警消息的视觉呈现方式",
     "items": {
       "include_map": {
-        "description": "是否包含地图图片",
+        "description": "包含地图图片",
         "type": "bool",
-        "hint": "适用于地震信息，会在消息末尾附加地图瓦片渲染出的图片",
         "default": true
       },
       "map_source": {
@@ -113,35 +835,45 @@
           "ArcGIS山影图",
           "中科星图卫星影像"
         ],
-        "default": "PetalMap矢量图亮",
-        "hint": "选择地图渲染使用的瓦片源"
+        "default": "PetalMap矢量图亮"
       },
       "map_zoom_level": {
         "description": "地图缩放级别",
         "type": "int",
-        "hint": "范围0-18，数值越大视野越小",
-        "default": 4,
+        "default": 5,
         "slider": { "min": 0, "max": 18, "step": 1 }
       },
       "playwright_mode": {
         "description": "Playwright 模式",
         "type": "string",
         "options": ["local", "remote"],
-        "default": "local",
-        "hint": "local=本地浏览器, remote=远程浏览器服务"
+        "default": "local"
       }
     }
   },
-  "admin_users": {
-    "description": "管理员列表",
-    "type": "list",
-    "hint": "管理员用户ID列表",
-    "default": []
-  },
   "weather_config": {
-    "description": "☁️ 气象预警配置",
+    "description": "⛈️ 气象预警配置",
     "type": "object",
     "items": {
+      "weather_filter": {
+        "description": "气象预警过滤器",
+        "type": "object",
+        "items": {
+          "enabled": { "description": "启用", "type": "bool", "default": false },
+          "keywords": {
+            "description": "关键词白名单",
+            "type": "list",
+            "hint": "留空推送全国，填写后只推送对应地区",
+            "default": []
+          },
+          "min_color_level": {
+            "description": "最低预警级别",
+            "type": "string",
+            "options": ["白色", "蓝色", "黄色", "橙色", "红色"],
+            "default": "白色"
+          }
+        }
+      },
       "mention_province": {
         "description": "在气象预警中提及省份",
         "type": "bool",
@@ -149,23 +881,82 @@
       }
     }
   },
-  "debug_config": {
-    "description": "🔧 调试配置",
+  "strategies": {
+    "description": "🧠 高级策略配置",
     "type": "object",
     "items": {
-      "startup_silence_duration": {
-        "description": "启动静默期（秒）",
-        "type": "int",
-        "default": 0
+      "cenc_fusion": {
+        "description": "CENC 地震情报融合",
+        "type": "object",
+        "hint": "Fan(主)+Wolfx(副)融合",
+        "items": {
+          "enabled": { "description": "启用", "type": "bool", "default": false }
+        }
+      },
+      "cwa_eew_fusion": {
+        "description": "CWA 地震预警融合",
+        "type": "object",
+        "hint": "Fan(主)+Wolfx(副)融合",
+        "items": {
+          "enabled": { "description": "启用", "type": "bool", "default": false }
+        }
       }
     }
   },
-  "local_monitoring": {
-    "description": "📍 本地监控",
+  "websocket_config": {
+    "description": "🔌 WebSocket连接配置",
+    "type": "object",
+    "items": {
+      "reconnect_interval": {
+        "description": "重连间隔(秒)",
+        "type": "int",
+        "default": 10,
+        "slider": { "min": 1, "max": 60, "step": 1 }
+      },
+      "connection_timeout": {
+        "description": "连接超时(秒)",
+        "type": "int",
+        "default": 15,
+        "slider": { "min": 5, "max": 120, "step": 1 }
+      }
+    }
+  },
+  "debug_config": {
+    "description": "🐛 调试配置",
+    "type": "object",
+    "items": {
+      "startup_silence_duration": {
+        "description": "启动静默期(秒)",
+        "type": "int",
+        "default": 0,
+        "slider": { "min": 0, "max": 3600, "step": 10 }
+      },
+      "filter_heartbeat_messages": {
+        "description": "过滤心跳包消息",
+        "type": "bool",
+        "default": true
+      }
+    }
+  },
+  "web_admin": {
+    "description": "💻 Web管理端配置",
     "type": "object",
     "items": {
       "enabled": { "description": "启用", "type": "bool", "default": false },
-      "interval": { "description": "轮询间隔（秒）", "type": "int", "default": 60 }
+      "host": { "description": "监听地址", "type": "string", "default": "127.0.0.1" },
+      "port": { "description": "端口", "type": "int", "default": 18331 },
+      "password": { "description": "密码", "type": "string", "default": "", "hidden": true }
+    }
+  },
+  "event_deduplication": {
+    "description": "事件去重配置",
+    "type": "object",
+    "items": {
+      "ttl_seconds": {
+        "description": "去重缓存时间(秒)",
+        "type": "int",
+        "default": 300
+      }
     }
   }
 }

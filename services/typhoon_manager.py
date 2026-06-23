@@ -20,9 +20,9 @@ except ImportError:
     import logging as logger
 
 try:
-    from domain.models import TyphoonTrackPoint, TyphoonEvent, EventEnvelope, EventIdentity
-except ImportError:
     from ..domain.models import TyphoonTrackPoint, TyphoonEvent, EventEnvelope, EventIdentity
+except ImportError:
+    from domain.models import TyphoonTrackPoint, TyphoonEvent, EventEnvelope, EventIdentity
 
 
 # CMA 风速(m/s) → 等级 (0-6)
@@ -626,7 +626,8 @@ class TyphoonManager:
         if not all_points:
             return None
 
-        latest = all_points[-1]
+        actual = [p for p in all_points if not p.get("is_forecast")]
+        latest = actual[-1] if actual else all_points[-1]
         return {
             "name_cn": name_jp,
             "name_en": name_en,
@@ -653,7 +654,8 @@ class TyphoonManager:
         pts = data.get("track_points", [])
         if not pts:
             return False
-        last = pts[-1]
+        actual = [p for p in pts if not p.get("is_forecast")]
+        last = actual[-1] if actual else pts[-1]
         ts = last.get("timestamp")
         if ts is None:
             return False

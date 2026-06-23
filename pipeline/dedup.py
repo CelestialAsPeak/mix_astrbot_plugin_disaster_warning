@@ -11,9 +11,9 @@ import time
 from typing import Any
 
 try:
-    from domain.models import EventEnvelope
-except ImportError:
     from ..domain.models import EventEnvelope
+except ImportError:
+    from domain.models import EventEnvelope
 
 
 class EventDeduplicator:

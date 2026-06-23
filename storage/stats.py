@@ -10,9 +10,9 @@ from datetime import datetime, timezone
 from typing import Any
 
 try:
-    from domain.models import EventEnvelope
-except ImportError:
     from ..domain.models import EventEnvelope
+except ImportError:
+    from domain.models import EventEnvelope
 
 
 class StatisticsManager:

@@ -26,6 +26,8 @@
 
   "target_sessions": [],
 
+  "groups": {},
+
   "data_sources": {
     "fan_studio": { "enabled": true },
     "wolfx": { "enabled": false },
@@ -40,7 +42,7 @@
   },
 
   "debug_config": {
-    "startup_silence_duration": 0
+    "startup_silence_duration": 30
   },
 
   "local_monitoring": {

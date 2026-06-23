@@ -22,9 +22,9 @@ except ImportError:
     import logging as logger
 
 try:
-    from domain.models import EventEnvelope
-except ImportError:
     from ..domain.models import EventEnvelope
+except ImportError:
+    from domain.models import EventEnvelope
 
 
 class FusionResult(str, Enum):

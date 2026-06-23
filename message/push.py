@@ -29,11 +29,11 @@ except ImportError:
         def __init__(self, chain): self.chain = chain if isinstance(chain, list) else [chain]
 
 try:
-    from domain.models import EventEnvelope, EewEvent, EarthquakeReport
-    from message.presenters import present
-except ImportError:
     from ..domain.models import EventEnvelope, EewEvent, EarthquakeReport
     from ..message.presenters import present
+except ImportError:
+    from domain.models import EventEnvelope, EewEvent, EarthquakeReport
+    from message.presenters import present
 
 
 class SessionSender:
@@ -141,10 +141,15 @@ class PushExecutionService:
 
             # 构建消息链（文本 + 地图图片）
             chain_components = [Plain(text)]
+            # 地震震中图
             map_b64_list = await self._render_event_map(envelope)
             if map_b64_list:
                 for b64 in map_b64_list:
                     chain_components.append(Image.fromBase64(b64))
+            # 台风路径图（由 _typhoon_push_adapter 预渲染后塞入 metadata）
+            typhoon_img = envelope.metadata.get("_typhoon_image") if envelope.metadata else None
+            if typhoon_img:
+                chain_components.append(Image.fromBase64(typhoon_img))
 
             message = MessageChain(chain_components)
 

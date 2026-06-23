@@ -22,11 +22,11 @@ except ImportError:
     import logging as logger
 
 try:
-    from pipeline.base_rule import BaseRule, RuleContext, RuleDecision
-    from domain.models import EewEvent, EarthquakeReport, TsunamiEvent, WeatherEvent
-except ImportError:
     from .base_rule import BaseRule, RuleContext, RuleDecision
     from ..domain.models import EewEvent, EarthquakeReport, TsunamiEvent, WeatherEvent
+except ImportError:
+    from pipeline.base_rule import BaseRule, RuleContext, RuleDecision
+    from domain.models import EewEvent, EarthquakeReport, TsunamiEvent, WeatherEvent
 
 
 # ─── 0. 气象预警硬拦截（已弃用） ───
@@ -235,28 +235,36 @@ class EarthquakeThresholdRule(BaseRule):
         if isinstance(direct, dict):
             min_mag = direct.get("min_magnitude", 0)
             min_int = direct.get("min_intensity", 0)
-            if min_mag > 0 and check_mag is not None and check_mag < min_mag:
-                return RuleDecision.reject(f"{source_id}: {check_mag} < {min_mag}", self.name)
             intensity = self._get_intensity(ctx)
-            if min_int > 0 and intensity is not None and intensity < min_int:
-                return RuleDecision.reject(f"{source_id} i {intensity} < {min_int}", self.name)
-            return RuleDecision.accept(rule_name=self.name)
+            # OR逻辑：震级够 或 烈度够 即可推送
+            mag_ok = (min_mag <= 0 or check_mag is None or check_mag >= min_mag)
+            int_ok = (min_int <= 0 or intensity is None or intensity >= min_int)
+            if mag_ok or int_ok:
+                return RuleDecision.accept(rule_name=self.name)
+            return RuleDecision.reject(
+                f"{source_id}: 震级{check_mag}<{min_mag} 且 烈度{intensity}<{min_int}", self.name)
 
-        # 3) 全局兜底 intensity_filter / magnitude_only_filter
+        # 3) 全局兜底 intensity_filter / magnitude_only_filter / scale_filter
         for gf_name in ("intensity_filter", "magnitude_only_filter", "scale_filter"):
             gf = filters.get(gf_name)
             if not isinstance(gf, dict):
                 continue
             min_mag = gf.get("min_magnitude", 0)
-            if min_mag > 0 and check_mag is not None and check_mag < min_mag:
-                return RuleDecision.reject(f"{gf_name}: {check_mag} < {min_mag}", self.name)
             min_int = gf.get("min_intensity", 0)
-            if min_int > 0:
-                intensity = self._get_intensity(ctx)
-                if intensity is not None and intensity < min_int:
-                    return RuleDecision.reject(f"{gf_name}: i {intensity} < {min_int}", self.name)
-            if min_mag > 0 or min_int > 0:
-                break
+            intensity = self._get_intensity(ctx)
+            # OR逻辑
+            mag_ok = (min_mag <= 0 or check_mag is None or check_mag >= min_mag)
+            int_ok = (min_int <= 0 or intensity is None or intensity >= min_int)
+            if mag_ok and int_ok:
+                continue  # 当前过滤器通过，继续检查下一个
+            if not mag_ok and not int_ok:
+                return RuleDecision.reject(
+                    f"{gf_name}: 震级{check_mag}<{min_mag} 且 烈度{intensity}<{min_int}", self.name)
+            # 有一个不满足但另一个没配 → 按单个条件拒
+            if not mag_ok:
+                return RuleDecision.reject(f"{gf_name}: 震级{check_mag}<{min_mag}", self.name)
+            if not int_ok:
+                return RuleDecision.reject(f"{gf_name}: 烈度{intensity}<{min_int}", self.name)
         return RuleDecision.accept(rule_name=self.name)
 
     @staticmethod
