@@ -178,10 +178,17 @@ class EarthquakeThresholdRule(BaseRule):
         "usgs_weekly": "usgs_weekly_filter",
         "funvisis_http": "funvisis_filter", "cenais_http": "cenais_filter",
         "csnc_http": "csnc_filter", "tmd_http": "tmd_filter",
-        "phivolcs_http": "phivolcs_filter", "snet_http": "snet_filter",
+        "phivolcs_http": "phivolcs_filter",
+        # snet_http 故意不加入 _FILTER_MAP：
+        # SNET 是海底震度监测（非地震测定），其 min_magnitude 实际是测站级 shindo 阈值
+        # 已经在 _fetch_snet_once() 中用于测站过滤，这里不再重复当震级阈值用
         "icl_http": "icl_filter",
         "sc_wolfx_eew": "sc_eew_filter", "fj_wolfx_eew": "fj_eew_filter",
         "cq_wolfx_eew": "cq_eew_filter",
+        # JMA/CWA 震度过滤器
+        "jma_fanstudio": "jma_scale_filter", "jma_wolfx": "jma_scale_filter",
+        "jma_wolfx_info": "jma_scale_filter", "jma_p2p": "jma_scale_filter",
+        "cwa_fanstudio": "cwa_scale_filter", "cwa_wolfx": "cwa_scale_filter",
     }
 
     def evaluate(self, ctx: RuleContext) -> RuleDecision:
@@ -225,15 +232,30 @@ class EarthquakeThresholdRule(BaseRule):
         filter_key = self._FILTER_MAP.get(source_id)
         if filter_key:
             f = filters.get(filter_key, {})
-            if f.get("enabled", True):
-                # 优先读取用户通过 schema UI 配置的直接源阈值 (earthquake_filters.{source_id})
-                direct_cfg = filters.get(source_id)
-                if isinstance(direct_cfg, dict) and "min_magnitude" in direct_cfg:
-                    min_mag = direct_cfg["min_magnitude"]
+            if not f.get("enabled", True):
+                return RuleDecision.accept(rule_name=self.name)
+            # 优先读取用户通过 schema UI 配置的直接源阈值 (earthquake_filters.{source_id})
+            direct_cfg = filters.get(source_id)
+            if isinstance(direct_cfg, dict) and "min_magnitude" in direct_cfg:
+                min_mag = direct_cfg["min_magnitude"]
+            else:
+                min_mag = f.get("min_magnitude", 4.5)
+            # JMA/CWA 震度过滤器：min_magnitude OR min_shindo
+            if filter_key in ("jma_scale_filter", "cwa_scale_filter"):
+                if isinstance(direct_cfg, dict) and "min_shindo" in direct_cfg:
+                    min_shindo = direct_cfg["min_shindo"]
                 else:
-                    min_mag = f.get("min_magnitude", 4.5)
-                if check_mag is not None and check_mag < min_mag:
-                    return RuleDecision.reject(f"{filter_key}: {check_mag} < {min_mag}", self.name)
+                    min_shindo = f.get("min_shindo", 0)
+                shindo = self._get_intensity(ctx)  # JMA/CWA 的 max_intensity = 震度
+                mag_ok = (min_mag <= 0 or check_mag is None or check_mag >= min_mag)
+                shindo_ok = (min_shindo <= 0 or shindo is None or shindo >= min_shindo)
+                if mag_ok or shindo_ok:
+                    return RuleDecision.accept(rule_name=self.name)
+                return RuleDecision.reject(
+                    f"{filter_key}: 震级{check_mag}<{min_mag} 且 震度{shindo}<{min_shindo}", self.name)
+            # 普通过滤器：只检查震级
+            if check_mag is not None and check_mag < min_mag:
+                return RuleDecision.reject(f"{filter_key}: {check_mag} < {min_mag}", self.name)
             return RuleDecision.accept(rule_name=self.name)
 
         # 2) earthquake_filters.{source_id} 直接配置

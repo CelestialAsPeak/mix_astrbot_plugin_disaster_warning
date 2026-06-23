@@ -55,17 +55,12 @@ try:
             if _sid.startswith("_"):
                 continue
             _dn = _entry.get("display_name", "") or ""
-            _idn = _entry.get("institution_display_name", "") or ""
-            # 从 display_name 提取 code：如 "香港天文台(HKO)" → "HKO"
+            # CODE: 始终用 institution_key（比 display_name 的 (CODE) 更可靠）
+            _ik = _entry.get("institution_key", "") or ""
+            _code = _ik.upper() if _ik else ""
+            # NAME: 去掉 display_name 末尾 (CODE) 后缀（如有）
             _m = re.search(r"\(([A-Z0-9+/]+)\)$", _dn)
-            _code = _m.group(1) if _m else ""
-            # 机构名：去掉 (CODE) 后缀的 display_name
             _name = _dn[:_m.start()].strip() if _m else _dn
-            # 也用 institution_display_name 兜底（绕过上面的提取更好就用它）
-            if _idn and _code and _idn.startswith(_code):
-                _name2 = _idn[len(_code):].strip()
-                if _name2:
-                    _name = _name2
             _SOURCE_DISPLAY_INFO[_sid] = {"code": _code, "name": _name}
 except Exception:
     logger.warning("[Presenters] sources.json 加载失败")

@@ -650,6 +650,8 @@ class MixDisasterWarningPlugin(Star):
             await self._route_fan_studio(data)
         elif name == "wolfx":
             await self._route_wolfx(data)
+        elif name == "p2p":
+            await self._route_p2p(data)
         else:
             await self.signal_bus.emit(name, data)
 
@@ -750,6 +752,26 @@ class MixDisasterWarningPlugin(Star):
         else:
             logger.info(f"[Fan] 未知消息类型: {msg_type}")
 
+    async def _route_p2p(self, data: dict) -> None:
+        """P2P 地震情報消息内部路由 — 按 code 字段匹配源。
+
+        P2P 协议 codes:
+          556 = 緊急地震速報 (EEW) → jma_p2p
+          551 = 地震情報 (Report)  → jma_p2p_info
+          552 = 津波予報 (Tsunami) → jma_tsunami_p2p
+        """
+        code = data.get("code")
+        p2p_code_map: dict[int, str] = {
+            556: "jma_p2p",
+            551: "jma_p2p_info",
+            552: "jma_tsunami_p2p",
+        }
+        sid = p2p_code_map.get(code)
+        if sid:
+            await self.signal_bus.emit(sid, data)
+        else:
+            logger.info(f"[P2P] 未匹配 code={code}")
+
     async def _route_wolfx(self, data: dict) -> None:
         """Wolfx 消息内部路由 — 按 type 字段匹配源。"""
         msg_type = data.get("type", "unknown")
@@ -758,6 +780,8 @@ class MixDisasterWarningPlugin(Star):
 
         sid = self._wolfx_source_map.get(msg_type)
         if sid:
+            if sid in ("jma_wolfx_info",) and msg_type in ("jma_report", "jma_info"):
+                logger.info(f"[Wolfx] JMA 地震情报路由 → {sid} (type={msg_type})")
             await self.signal_bus.emit(sid, data)
         else:
             logger.info(f"[Wolfx] 未匹配 type={msg_type}")
@@ -817,6 +841,7 @@ class MixDisasterWarningPlugin(Star):
             "tmd_http": ("https://earthquake.tmd.go.th/", 120, True),
             "phivolcs_http": ("https://earthquake.phivolcs.dost.gov.ph/", 120, True),
             "csnc_http": ("https://www.sismologia.cl/index.html", 120, True),
+            "usgs_weekly": ("https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_week.geojson", 300, False),
         }
         for sid, (url, interval, raw_text) in POLLERS.items():
             if sid in sources:

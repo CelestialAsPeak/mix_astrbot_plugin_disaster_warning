@@ -344,7 +344,11 @@
         "type": "object",
         "hint": "适用于所有地震信息，支持黑名单和白名单",
         "items": {
-          "enabled": { "description": "启用", "type": "bool", "default": false },
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": false
+          },
           "blacklist": {
             "description": "黑名单关键词",
             "type": "list",
@@ -364,20 +368,32 @@
         "type": "object",
         "hint": "OR逻辑：震级够 或 烈度够 任一满足即可推送",
         "items": {
-          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
           "min_magnitude": {
             "description": "最小震级",
             "type": "float",
             "hint": "震级≥此值时推送（OR逻辑：震级和烈度满足一个即可）",
             "default": 2.0,
-            "slider": { "min": 0, "max": 10, "step": 0.1 }
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            }
           },
           "min_intensity": {
             "description": "最小烈度（中国标准）",
             "type": "float",
             "hint": "烈度≥此值时推送，烈度=震中预估烈度",
             "default": 4.0,
-            "slider": { "min": 0, "max": 12, "step": 0.1 }
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            }
           }
         }
       },
@@ -385,12 +401,21 @@
         "description": "USGS等仅震级过滤器",
         "type": "object",
         "items": {
-          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
           "min_magnitude": {
             "description": "最小震级",
             "type": "float",
             "default": 4.5,
-            "slider": { "min": 0, "max": 10, "step": 0.1 }
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
           }
         }
       },
@@ -398,18 +423,32 @@
         "description": "Global Quake专用过滤器",
         "type": "object",
         "items": {
-          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
           "min_magnitude": {
             "description": "最小震级",
             "type": "float",
             "default": 4.5,
-            "slider": { "min": 0, "max": 10, "step": 0.1 }
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
           },
           "min_intensity": {
             "description": "最小烈度",
             "type": "float",
             "default": 5.0,
-            "slider": { "min": 0, "max": 12, "step": 0.1 }
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "烈度大于等于此值时推送（中国标准烈度，0-12级）"
           }
         }
       },
@@ -417,12 +456,21 @@
         "description": "EMSC 专用过滤器",
         "type": "object",
         "items": {
-          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
           "min_magnitude": {
             "description": "最小震级",
             "type": "float",
             "default": 4.5,
-            "slider": { "min": 0, "max": 10, "step": 0.1 }
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
           }
         }
       },
@@ -430,12 +478,21 @@
         "description": "GFZ 专用过滤器",
         "type": "object",
         "items": {
-          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
           "min_magnitude": {
             "description": "最小震级",
             "type": "float",
             "default": 4.5,
-            "slider": { "min": 0, "max": 10, "step": 0.1 }
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
           }
         }
       },
@@ -443,12 +500,21 @@
         "description": "BCSF 专用过滤器",
         "type": "object",
         "items": {
-          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
           "min_magnitude": {
             "description": "最小震级",
             "type": "float",
             "default": 4.5,
-            "slider": { "min": 0, "max": 10, "step": 0.1 }
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
           }
         }
       },
@@ -456,12 +522,21 @@
         "description": "USP 专用过滤器",
         "type": "object",
         "items": {
-          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
           "min_magnitude": {
             "description": "最小震级",
             "type": "float",
             "default": 4.5,
-            "slider": { "min": 0, "max": 10, "step": 0.1 }
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
           }
         }
       },
@@ -469,12 +544,21 @@
         "description": "HKO 专用过滤器",
         "type": "object",
         "items": {
-          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
           "min_magnitude": {
             "description": "最小震级",
             "type": "float",
             "default": 4.5,
-            "slider": { "min": 0, "max": 10, "step": 0.1 }
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
           }
         }
       },
@@ -482,12 +566,21 @@
         "description": "FSSN 专用过滤器",
         "type": "object",
         "items": {
-          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
           "min_magnitude": {
             "description": "最小震级",
             "type": "float",
             "default": 4.5,
-            "slider": { "min": 0, "max": 10, "step": 0.1 }
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
           }
         }
       },
@@ -495,12 +588,21 @@
         "description": "KMA 专用过滤器",
         "type": "object",
         "items": {
-          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
           "min_magnitude": {
             "description": "最小震级",
             "type": "float",
             "default": 4.5,
-            "slider": { "min": 0, "max": 10, "step": 0.1 }
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
           }
         }
       },
@@ -508,12 +610,21 @@
         "description": "ShakeAlert 专用过滤器",
         "type": "object",
         "items": {
-          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
           "min_magnitude": {
             "description": "最小震级",
             "type": "float",
             "default": 4.5,
-            "slider": { "min": 0, "max": 10, "step": 0.1 }
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
           }
         }
       },
@@ -521,12 +632,21 @@
         "description": "KMA 韩国预警专用过滤器",
         "type": "object",
         "items": {
-          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
           "min_magnitude": {
             "description": "最小震级",
             "type": "float",
             "default": 4.5,
-            "slider": { "min": 0, "max": 10, "step": 0.1 }
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
           }
         }
       },
@@ -534,12 +654,21 @@
         "description": "宁夏地震台网专用过滤器",
         "type": "object",
         "items": {
-          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
           "min_magnitude": {
             "description": "最小震级",
             "type": "float",
             "default": 3.0,
-            "slider": { "min": 0, "max": 10, "step": 0.1 }
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
           }
         }
       },
@@ -547,12 +676,21 @@
         "description": "广西地震台网专用过滤器",
         "type": "object",
         "items": {
-          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
           "min_magnitude": {
             "description": "最小震级",
             "type": "float",
             "default": 3.0,
-            "slider": { "min": 0, "max": 10, "step": 0.1 }
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
           }
         }
       },
@@ -560,12 +698,21 @@
         "description": "山西地震台网专用过滤器",
         "type": "object",
         "items": {
-          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
           "min_magnitude": {
             "description": "最小震级",
             "type": "float",
             "default": 3.0,
-            "slider": { "min": 0, "max": 10, "step": 0.1 }
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
           }
         }
       },
@@ -573,12 +720,21 @@
         "description": "北京地震台网专用过滤器",
         "type": "object",
         "items": {
-          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
           "min_magnitude": {
             "description": "最小震级",
             "type": "float",
             "default": 3.0,
-            "slider": { "min": 0, "max": 10, "step": 0.1 }
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
           }
         }
       },
@@ -586,12 +742,21 @@
         "description": "云南地震台网专用过滤器",
         "type": "object",
         "items": {
-          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
           "min_magnitude": {
             "description": "最小震级",
             "type": "float",
             "default": 3.0,
-            "slider": { "min": 0, "max": 10, "step": 0.1 }
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
           }
         }
       },
@@ -599,18 +764,32 @@
         "description": "GeoNet 新西兰专用过滤器",
         "type": "object",
         "items": {
-          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
           "min_magnitude": {
             "description": "最小震级",
             "type": "float",
             "default": 4.5,
-            "slider": { "min": 0, "max": 10, "step": 0.1 }
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
           },
           "min_intensity": {
             "description": "最小烈度(MMI)",
             "type": "float",
             "default": 5.0,
-            "slider": { "min": 0, "max": 12, "step": 0.1 }
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "烈度大于等于此值时推送（中国标准烈度，0-12级）"
           }
         }
       },
@@ -618,12 +797,21 @@
         "description": "NRCan 加拿大专用过滤器",
         "type": "object",
         "items": {
-          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
           "min_magnitude": {
             "description": "最小震级",
             "type": "float",
             "default": 4.5,
-            "slider": { "min": 0, "max": 10, "step": 0.1 }
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
           }
         }
       },
@@ -631,12 +819,21 @@
         "description": "USGS 全球周报专用过滤器",
         "type": "object",
         "items": {
-          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
           "min_magnitude": {
             "description": "最小震级",
             "type": "float",
             "default": 4.5,
-            "slider": { "min": 0, "max": 10, "step": 0.1 }
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
           }
         }
       },
@@ -644,12 +841,21 @@
         "description": "FUNVISIS 委内瑞拉专用过滤器",
         "type": "object",
         "items": {
-          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
           "min_magnitude": {
             "description": "最小震级",
             "type": "float",
             "default": 3.0,
-            "slider": { "min": 0, "max": 10, "step": 0.1 }
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
           }
         }
       },
@@ -657,12 +863,21 @@
         "description": "CENAIS 古巴专用过滤器",
         "type": "object",
         "items": {
-          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
           "min_magnitude": {
             "description": "最小震级",
             "type": "float",
             "default": 3.0,
-            "slider": { "min": 0, "max": 10, "step": 0.1 }
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
           }
         }
       },
@@ -670,12 +885,21 @@
         "description": "ICL 成都高新减灾研究所专用过滤器",
         "type": "object",
         "items": {
-          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
           "min_magnitude": {
             "description": "最小震级",
             "type": "float",
             "default": 3.0,
-            "slider": { "min": 0, "max": 10, "step": 0.1 }
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
           }
         }
       },
@@ -684,13 +908,89 @@
         "type": "object",
         "hint": "基于最大震度过滤（日本震度标准）",
         "items": {
-          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
           "min_magnitude": {
             "description": "最小触发震度",
             "type": "float",
             "hint": "有测站震度大于等于此值时推送",
             "default": 0.5,
-            "slider": { "min": 0.0, "max": 7.0, "step": 0.1 }
+            "slider": {
+              "min": 0.0,
+              "max": 7.0,
+              "step": 0.1
+            }
+          }
+        }
+      },
+      "jma_scale_filter": {
+        "description": "JMA（日本气象厅）震度过滤器",
+        "type": "object",
+        "hint": "适用于日本气象厅紧急地震速报和地震情报。使用 OR 逻辑：满足震级 或 满足震度即可推送",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "hint": "震级大于等于此值时推送（OR逻辑）",
+            "default": 2.0,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            }
+          },
+          "min_shindo": {
+            "description": "最小震度（日本标准）",
+            "type": "float",
+            "hint": "JMA 震度大于等于此值时推送。日本震度 0-7 级，7为最大",
+            "default": 1.0,
+            "slider": {
+              "min": 0.0,
+              "max": 7.0,
+              "step": 0.1
+            }
+          }
+        }
+      },
+      "cwa_scale_filter": {
+        "description": "CWA（台湾中央气象署）震度过滤器",
+        "type": "object",
+        "hint": "适用于台湾强震即时警报和地震报告。使用 OR 逻辑：满足震级 或 满足震度即可推送",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "hint": "震级大于等于此值时推送（OR逻辑）",
+            "default": 2.0,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            }
+          },
+          "min_shindo": {
+            "description": "最小震度（台湾标准）",
+            "type": "float",
+            "hint": "CWA 震度大于等于此值时推送",
+            "default": 1.0,
+            "slider": {
+              "min": 0.0,
+              "max": 7.0,
+              "step": 0.1
+            }
           }
         }
       },
@@ -698,12 +998,21 @@
         "description": "四川 EEW 专用过滤器",
         "type": "object",
         "items": {
-          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
           "min_magnitude": {
             "description": "最小震级",
             "type": "float",
             "default": 3.0,
-            "slider": { "min": 0, "max": 10, "step": 0.1 }
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
           }
         }
       },
@@ -711,12 +1020,21 @@
         "description": "福建 EEW 专用过滤器",
         "type": "object",
         "items": {
-          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
           "min_magnitude": {
             "description": "最小震级",
             "type": "float",
             "default": 3.0,
-            "slider": { "min": 0, "max": 10, "step": 0.1 }
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
           }
         }
       },
@@ -724,12 +1042,21 @@
         "description": "重庆 EEW 专用过滤器",
         "type": "object",
         "items": {
-          "enabled": { "description": "启用", "type": "bool", "default": true },
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
           "min_magnitude": {
             "description": "最小震级",
             "type": "float",
             "default": 3.0,
-            "slider": { "min": 0, "max": 10, "step": 0.1 }
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
           }
         }
       }
@@ -745,20 +1072,32 @@
         "type": "int",
         "hint": "1表示每次都推送",
         "default": 1,
-        "slider": { "min": 1, "max": 10, "step": 1 }
+        "slider": {
+          "min": 1,
+          "max": 10,
+          "step": 1
+        }
       },
       "jma_report_n": {
         "description": "JMA：每N报推送一次",
         "type": "int",
         "hint": "M5.0-7.0的地震一分钟内可能推送5-20次",
         "default": 3,
-        "slider": { "min": 1, "max": 20, "step": 1 }
+        "slider": {
+          "min": 1,
+          "max": 20,
+          "step": 1
+        }
       },
       "gq_report_n": {
         "description": "Global Quake：每N报推送一次",
         "type": "int",
         "default": 5,
-        "slider": { "min": 1, "max": 20, "step": 1 }
+        "slider": {
+          "min": 1,
+          "max": 20,
+          "step": 1
+        }
       },
       "final_report_always_push": {
         "description": "最终报是否总是推送",
@@ -786,13 +1125,21 @@
         "description": "本地纬度",
         "type": "float",
         "default": 39.9042,
-        "slider": { "min": -90.0, "max": 90.0, "step": 0.0001 }
+        "slider": {
+          "min": -90.0,
+          "max": 90.0,
+          "step": 0.0001
+        }
       },
       "longitude": {
         "description": "本地经度",
         "type": "float",
         "default": 116.4074,
-        "slider": { "min": -180.0, "max": 180.0, "step": 0.0001 }
+        "slider": {
+          "min": -180.0,
+          "max": 180.0,
+          "step": 0.0001
+        }
       },
       "place_name": {
         "description": "本地地名",
@@ -809,7 +1156,11 @@
         "description": "通知阈值(烈度)",
         "type": "float",
         "default": 4.0,
-        "slider": { "min": 0, "max": 12, "step": 0.1 }
+        "slider": {
+          "min": 0,
+          "max": 12,
+          "step": 0.1
+        }
       }
     }
   },
@@ -841,12 +1192,19 @@
         "description": "地图缩放级别",
         "type": "int",
         "default": 5,
-        "slider": { "min": 0, "max": 18, "step": 1 }
+        "slider": {
+          "min": 0,
+          "max": 18,
+          "step": 1
+        }
       },
       "playwright_mode": {
         "description": "Playwright 模式",
         "type": "string",
-        "options": ["local", "remote"],
+        "options": [
+          "local",
+          "remote"
+        ],
         "default": "local"
       }
     }
@@ -859,7 +1217,11 @@
         "description": "气象预警过滤器",
         "type": "object",
         "items": {
-          "enabled": { "description": "启用", "type": "bool", "default": false },
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": false
+          },
           "keywords": {
             "description": "关键词白名单",
             "type": "list",
@@ -869,7 +1231,13 @@
           "min_color_level": {
             "description": "最低预警级别",
             "type": "string",
-            "options": ["白色", "蓝色", "黄色", "橙色", "红色"],
+            "options": [
+              "白色",
+              "蓝色",
+              "黄色",
+              "橙色",
+              "红色"
+            ],
             "default": "白色"
           }
         }
@@ -890,7 +1258,11 @@
         "type": "object",
         "hint": "Fan(主)+Wolfx(副)融合",
         "items": {
-          "enabled": { "description": "启用", "type": "bool", "default": false }
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": false
+          }
         }
       },
       "cwa_eew_fusion": {
@@ -898,7 +1270,11 @@
         "type": "object",
         "hint": "Fan(主)+Wolfx(副)融合",
         "items": {
-          "enabled": { "description": "启用", "type": "bool", "default": false }
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": false
+          }
         }
       }
     }
@@ -911,13 +1287,21 @@
         "description": "重连间隔(秒)",
         "type": "int",
         "default": 10,
-        "slider": { "min": 1, "max": 60, "step": 1 }
+        "slider": {
+          "min": 1,
+          "max": 60,
+          "step": 1
+        }
       },
       "connection_timeout": {
         "description": "连接超时(秒)",
         "type": "int",
         "default": 15,
-        "slider": { "min": 5, "max": 120, "step": 1 }
+        "slider": {
+          "min": 5,
+          "max": 120,
+          "step": 1
+        }
       }
     }
   },
@@ -929,7 +1313,11 @@
         "description": "启动静默期(秒)",
         "type": "int",
         "default": 0,
-        "slider": { "min": 0, "max": 3600, "step": 10 }
+        "slider": {
+          "min": 0,
+          "max": 3600,
+          "step": 10
+        }
       },
       "filter_heartbeat_messages": {
         "description": "过滤心跳包消息",
@@ -942,10 +1330,27 @@
     "description": "💻 Web管理端配置",
     "type": "object",
     "items": {
-      "enabled": { "description": "启用", "type": "bool", "default": false },
-      "host": { "description": "监听地址", "type": "string", "default": "127.0.0.1" },
-      "port": { "description": "端口", "type": "int", "default": 18331 },
-      "password": { "description": "密码", "type": "string", "default": "", "hidden": true }
+      "enabled": {
+        "description": "启用",
+        "type": "bool",
+        "default": false
+      },
+      "host": {
+        "description": "监听地址",
+        "type": "string",
+        "default": "127.0.0.1"
+      },
+      "port": {
+        "description": "端口",
+        "type": "int",
+        "default": 18331
+      },
+      "password": {
+        "description": "密码",
+        "type": "string",
+        "default": "",
+        "hidden": true
+      }
     }
   },
   "event_deduplication": {
