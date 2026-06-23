@@ -53,10 +53,11 @@ class EventTimeRule(BaseRule):
     def evaluate(self, ctx: RuleContext) -> RuleDecision:
         event = ctx.event
         if hasattr(event, "occurred_at") and event.occurred_at:
-            # parse_ts 返回 timezone-aware datetime，统一转 naive 再比较
             occurred = event.occurred_at
+            # 统一转 UTC naive 再比较
             if occurred.tzinfo is not None:
-                occurred = occurred.replace(tzinfo=None)
+                from datetime import timezone
+                occurred = occurred.astimezone(timezone.utc).replace(tzinfo=None)
             age = (datetime.utcnow() - occurred).total_seconds()
             if age > self.MAX_AGE_SECONDS:
                 return RuleDecision.reject(
@@ -225,7 +226,12 @@ class EarthquakeThresholdRule(BaseRule):
         if filter_key:
             f = filters.get(filter_key, {})
             if f.get("enabled", True):
-                min_mag = f.get("min_magnitude", 4.5)
+                # 优先读取用户通过 schema UI 配置的直接源阈值 (earthquake_filters.{source_id})
+                direct_cfg = filters.get(source_id)
+                if isinstance(direct_cfg, dict) and "min_magnitude" in direct_cfg:
+                    min_mag = direct_cfg["min_magnitude"]
+                else:
+                    min_mag = f.get("min_magnitude", 4.5)
                 if check_mag is not None and check_mag < min_mag:
                     return RuleDecision.reject(f"{filter_key}: {check_mag} < {min_mag}", self.name)
             return RuleDecision.accept(rule_name=self.name)
@@ -252,19 +258,13 @@ class EarthquakeThresholdRule(BaseRule):
             min_mag = gf.get("min_magnitude", 0)
             min_int = gf.get("min_intensity", 0)
             intensity = self._get_intensity(ctx)
-            # OR逻辑
+            # OR逻辑：震级够 或 烈度够 即通过
             mag_ok = (min_mag <= 0 or check_mag is None or check_mag >= min_mag)
             int_ok = (min_int <= 0 or intensity is None or intensity >= min_int)
-            if mag_ok and int_ok:
+            if mag_ok or int_ok:
                 continue  # 当前过滤器通过，继续检查下一个
-            if not mag_ok and not int_ok:
-                return RuleDecision.reject(
-                    f"{gf_name}: 震级{check_mag}<{min_mag} 且 烈度{intensity}<{min_int}", self.name)
-            # 有一个不满足但另一个没配 → 按单个条件拒
-            if not mag_ok:
-                return RuleDecision.reject(f"{gf_name}: 震级{check_mag}<{min_mag}", self.name)
-            if not int_ok:
-                return RuleDecision.reject(f"{gf_name}: 烈度{intensity}<{min_int}", self.name)
+            return RuleDecision.reject(
+                f"{gf_name}: 震级{check_mag}<{min_mag} 且 烈度{intensity}<{min_int}", self.name)
         return RuleDecision.accept(rule_name=self.name)
 
     @staticmethod
@@ -277,35 +277,85 @@ class EarthquakeThresholdRule(BaseRule):
         return None
 
 
-# ─── 6. 报次规则 ───
+# ─── 6. 报次规则 + 推送频率控制 ───
 
 class ReportRule(BaseRule):
-    """报次策略 — 首报/续报/终报过滤。"""
+    """报次策略 — 首报/续报/终报过滤 + EEW 推送频率控制。"""
 
     name = "report"
+
+    # 来源 → 频率分组映射
+    _FREQ_GROUPS: dict[str, str] = {
+        "cea_fanstudio": "cea_cwa", "cea_pr_fanstudio": "cea_cwa",
+        "sc_wolfx_eew": "cea_cwa", "fj_wolfx_eew": "cea_cwa", "cq_wolfx_eew": "cea_cwa",
+        "cwa_fanstudio": "cea_cwa", "cwa_wolfx": "cea_cwa",
+        "jma_fanstudio": "jma", "jma_wolfx": "jma", "jma_wolfx_info": "jma",
+        "jma_p2p": "jma",
+        "global_quake": "gq",
+    }
 
     def evaluate(self, ctx: RuleContext) -> RuleDecision:
         if not isinstance(ctx.event, (EewEvent, EarthquakeReport)):
             return RuleDecision.accept(rule_name=self.name)
 
+        # ── strategies.report_strategy（与旧策略兼容） ──
         strategies = ctx.config.get("strategies", {})
-        if not isinstance(strategies, dict):
+        if isinstance(strategies, dict):
+            report_strategy = strategies.get("report_strategy", "all")
+            report_num = ctx.event.report_num if hasattr(ctx.event, "report_num") else None
+            is_final = ctx.event.is_final if hasattr(ctx.event, "is_final") else None
+
+            if report_strategy == "first_only" and report_num and report_num > 1:
+                return RuleDecision.reject(f"非首报 (第 {report_num} 报)", self.name)
+            if report_strategy == "final_only" and not is_final:
+                return RuleDecision.reject("非终报", self.name)
+
+        # ── push_frequency_control（EEW 报次限频） ──
+        freq = ctx.config.get("push_frequency_control", {})
+        if not isinstance(freq, dict):
             return RuleDecision.accept(rule_name=self.name)
 
-        report_strategy = strategies.get("report_strategy", "all")
-        if report_strategy == "all":
+        group = self._FREQ_GROUPS.get(ctx.source_id)
+        if group is None:
             return RuleDecision.accept(rule_name=self.name)
 
         report_num = ctx.event.report_num if hasattr(ctx.event, "report_num") else None
         is_final = ctx.event.is_final if hasattr(ctx.event, "is_final") else None
 
-        if report_strategy == "first_only" and report_num and report_num > 1:
-            return RuleDecision.reject(f"非首报 (第 {report_num} 报)", self.name)
+        # 没有报次信息 → 无法限频，放行
+        if report_num is None:
+            return RuleDecision.accept(rule_name=self.name)
 
-        if report_strategy == "final_only" and not is_final:
-            return RuleDecision.reject("非终报", self.name)
+        # 最终报告优先推送（如果开启）
+        if is_final and freq.get("final_report_always_push", True):
+            return RuleDecision.accept(rule_name=self.name)
 
-        return RuleDecision.accept(rule_name=self.name)
+        # 首报始终推送
+        if report_num <= 1:
+            return RuleDecision.accept(rule_name=self.name)
+
+        # ignore_non_final_reports（仅 JMA）：跳过所有非终报
+        if group == "jma" and freq.get("ignore_non_final_reports", False):
+            return RuleDecision.reject(
+                f"JMA 忽略非最终报 (第 {report_num} 报)", self.name,
+            )
+
+        # 按分组读取 N 值
+        n_map = {"cea_cwa": "cea_cwa_report_n", "jma": "jma_report_n", "gq": "gq_report_n"}
+        key = n_map.get(group, "")
+        n = int(freq.get(key, 1) or 1)
+
+        # N=1 表示每次都推
+        if n <= 1:
+            return RuleDecision.accept(rule_name=self.name)
+
+        # 每 N 报推一次：report_num % N == 0 时推
+        if report_num % n == 0:
+            return RuleDecision.accept(rule_name=self.name)
+
+        return RuleDecision.reject(
+            f"{group} 报次限频: 第 {report_num} 报跳过 (每 {n} 报推一次)", self.name,
+        )
 
 
 # ─── 7. 本地烈度规则 ───

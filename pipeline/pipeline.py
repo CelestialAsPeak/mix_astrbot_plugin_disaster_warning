@@ -135,6 +135,7 @@ class EventPipeline:
 
         # ── 3. 逐群组推送 ──
         push_result = False
+        any_group_pushed = False
 
         # 收集阈值规则（群组级重新评估用）
         threshold_rules = [r for r in self._rule_chain.rules if r.name == "threshold"]
@@ -168,7 +169,6 @@ class EventPipeline:
                     break
 
             if not group_accepted:
-                self.events_filtered += 1
                 continue
 
             # 推送到该群组的会话
@@ -181,10 +181,14 @@ class EventPipeline:
                     )
                     if r:
                         push_result = True
-                        self.events_pushed += 1
+                        any_group_pushed = True
                         logger.debug(f"[Pipeline] 推送到群 {group_id} 成功")
                 except Exception as e:
                     logger.error(f"[Pipeline] 群 {group_id} 推送失败: {e}")
+
+        # 事件级计数器（无论推送多少群组，只计一次）
+        if any_group_pushed:
+            self.events_pushed += 1
 
         # ── 4. 统计记录 ──
         if self.stats_manager:

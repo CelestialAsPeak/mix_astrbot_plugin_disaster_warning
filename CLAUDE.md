@@ -47,15 +47,17 @@ origin: https://github.com/CelestialAsPeak/mix_astrbot_plugin_disaster_warning.g
 ## 未完工
 
 ### 设置页画了但代码没读的
-- `push_frequency_control`（EEW 报次限频）
+- ~~`push_frequency_control`（EEW 报次限频）~~ ✅ 已实现（ReportRule，报次规则 + 频率控制合并）
 - `local_monitoring`（本地经纬度 + 烈度阈值）
 - `websocket_config`（重连/超时参数）
 - `data_sources` 的细粒度 source 开关
 - `offline_notification_sessions`
 - `display_timezone`
 
-### 格式
-- `present_typhoon_push` 还是 `‖` 前缀格式，用户希望改成跟 `present_typhoon` 一样的 `_field()` 布局
+### 注意
+- ICL 数据源（成都高新所）因法律风险故意不接入，详见 `_setup_http_pollers` 注释
+- SNET magnitude 存的是 shindo 震度值，但只在 `present_snet()` 中使用（不读 magnitude），阈值过滤刚好能用，保留现状
+- 台风自动推送走 `present_typhoon_push()`（`‖` 前缀格式），不同于查询用的 `_field()` 排版
 
 ## 踩坑记录
 

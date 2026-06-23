@@ -79,6 +79,25 @@ from .parser.http_poll import parsers as http_poll_parsers
 from .parser.typhoon import cma as typhoon_cma, jma as typhoon_jma
 
 
+# ── 来源简写映射（供查询命令共享） ──
+
+_SHORT_SRC_MAP: dict[str, str] = {
+    "cenc": "cenc_fanstudio", "cea": "cea_fanstudio",
+    "jma": "jma_fanstudio", "usgs": "usgs_fanstudio",
+    "cwa": "cwa_fanstudio", "emsc": "emsc_fanstudio",
+    "hko": "hko_fanstudio", "gfz": "gfz_fanstudio",
+    "usp": "usp_fanstudio", "bcsf": "bcsf_fanstudio",
+    "fssn": "fssn_fanstudio", "kma": "kma_fanstudio",
+    "sa": "sa_fanstudio", "kma_eew": "kma_eew_fanstudio",
+    "gq": "global_quake", "globalquake": "global_quake",
+    "geonet": "geonet_http", "nrcan": "nrcan_http",
+    "csnc": "csnc_http", "phivolcs": "phivolcs_http",
+    "tmd": "tmd_http", "funvisis": "funvisis_http",
+    "cenais": "cenais_http", "icl": "icl_http",
+    "snet": "snet",
+}
+
+
 # ── 格式工具（对齐旧版 earthquake_presenter） ──
 
 _SEPARATOR = "=" * 19
@@ -536,7 +555,12 @@ class MixDisasterWarningPlugin(Star):
         return await self._orchestrator.push_event(envelope)
 
     async def _typhoon_push_adapter(self, envelope) -> None:
-        """台风推送适配器 — 渲染路径图后送入 pipeline。"""
+        """台风推送适配器 — 渲染路径图后送入 pipeline。
+
+        注意：自动推送走 present_typhoon_push()（‖ 前缀格式），
+        与 /台风 查询用的 present_typhoon()（_field 排版）不同。
+        mismatch 是预期行为——自动推送信息密度更高（含时间/移向/预报点）。
+        """
         if self._in_silence_period():
             return
         if not self.pipeline:
@@ -782,6 +806,9 @@ class MixDisasterWarningPlugin(Star):
             self.ws_manager.add_connection(name, cfg["url"], cfg.get("backup", ""))
 
     def _setup_http_pollers(self, sources: dict, router: MessageRouter):
+        # ⚠️ ICL（成都高新减灾研究所）属于未公开/非官方数据源，
+        #    接入存在法律风险，故意不添加。如果你知道自己在做什么，
+        #    可以自己在这里加上 icl_http 的 poller。
         POLLERS = {
             "funvisis_http": ("http://www.funvisis.gob.ve/maravilla.json", 120, False),
             "cenais_http": ("https://www.cenais.gob.cu/lastquake/php/lastweek.php", 120, False),
@@ -1037,13 +1064,8 @@ class MixDisasterWarningPlugin(Star):
         self, event: AstrMessageEvent,
         source: str = "cenc", count: int = 9, mode: str = "text",
     ):
-        # 解析 source 简写 → 完整 source_id
-        src_map = {
-            "cenc": "cenc_fanstudio", "cea": "cea_fanstudio",
-            "jma": "jma_fanstudio", "usgs": "usgs_fanstudio",
-            "cwa": "cwa_fanstudio", "emsc": "emsc_fanstudio",
-        }
-        sid = src_map.get(source, source)
+        # 解析 source 简写 → 完整 source_id（用共享映射）
+        sid = _SHORT_SRC_MAP.get(source, source)
         rows = await self._query_source_events(sid, min(count, 30))
         if not rows:
             yield event.plain_result(f"📋 {source} 暂无地震数据")
@@ -1064,12 +1086,7 @@ class MixDisasterWarningPlugin(Star):
             return
 
         src_map = {
-            "cea": "cea_fanstudio", "cenc": "cenc_fanstudio",
-            "jma": "jma_fanstudio", "cwa": "cwa_fanstudio",
-            "usgs": "usgs_fanstudio", "emsc": "emsc_fanstudio",
-            "hko": "hko_fanstudio", "sa": "sa_fanstudio",
-            "kma": "kma_eew_fanstudio", "gq": "global_quake",
-            "globalquake": "global_quake",
+            **{k: v for k, v in _SHORT_SRC_MAP.items() if v not in ("snet",)},  # 共享映射（排除非 EEW 源）
         }
         sid = src_map.get(source.strip().lower(), source.strip())
 
@@ -1325,6 +1342,9 @@ class MixDisasterWarningPlugin(Star):
 
     async def _quick_query(self, event: AstrMessageEvent, source_id: str, display: str):
         rows = await self._query_source_events(source_id, 5)
+        # fallback: EEW-only 源（如 sa_fanstudio）没有 earthquake 类型
+        if not rows:
+            rows = await self._query_source_eew(source_id, 1)
         if not rows:
             yield event.plain_result(f"📡 {display} 暂无数据")
             return
