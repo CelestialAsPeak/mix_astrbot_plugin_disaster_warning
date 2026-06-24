@@ -1711,6 +1711,12 @@
       }
     }
   },
+  "sleep_mode_enabled": {
+    "description": "🌙 开启睡眠推送策略",
+    "type": "bool",
+    "hint": "关闭时所有群组使用普通阈值，sleep_mode_groups 和 sleep_earthquake_filters 不生效",
+    "default": false
+  },
   "sleep_mode_groups": {
     "description": "🌙 睡眠模式群组列表",
     "type": "list",

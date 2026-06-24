@@ -150,9 +150,10 @@ class EventPipeline:
             # 将群组过滤配置合并到上下文中
             group_config = dict(self.config)
             if self.session_manager:
-                # 检查群组是否在睡眠模式列表中
+                # 检查睡眠模式开关 + 群组是否在睡眠模式列表中
+                sleep_enabled = self.config.get("sleep_mode_enabled", False)
                 sleep_mode_groups = self.config.get("sleep_mode_groups", [])
-                sleep_mode = group_id in sleep_mode_groups
+                sleep_mode = sleep_enabled and group_id in sleep_mode_groups
                 if sleep_mode:
                     gf = self.session_manager.get_group_sleep_filters(group_id)
                 else:
