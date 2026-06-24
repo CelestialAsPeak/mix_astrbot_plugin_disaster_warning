@@ -89,7 +89,8 @@ class P2pJmaTsunamiHttpParser(BaseParser):
 
         # 最高等级
         max_grade = max((a.get("grade", "Unknown") for a in areas),
-                        key=lambda g: GRADE_ORDER.index(g) if g in GRADE_ORDER else -1)
+                        key=lambda g: GRADE_ORDER.index(g) if g in GRADE_ORDER else -1,
+                        default="Unknown")
         if cancelled:
             title, level, condition = "津波予報（解除）", 0, "none"
         else:
