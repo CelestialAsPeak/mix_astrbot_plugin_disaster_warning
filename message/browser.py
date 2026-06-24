@@ -22,7 +22,7 @@ class BrowserManager:
 
     def __init__(
         self,
-        pool_size: int = 2,
+        pool_size: int = 8,
         telemetry=None,
         mode: str = "local",
         server_url: str = "",
