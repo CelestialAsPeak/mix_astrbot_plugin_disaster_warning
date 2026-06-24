@@ -1555,15 +1555,16 @@ class MixDisasterWarningPlugin(Star):
             )
             text = present_earthquake_report(rep)
 
-        # 震度/烈度预览图（仅地震报告，非 JMA/CWA 源）
+        # 震度/烈度预览图（地震报告 + GQ，非 JMA/CWA 源）
         intensity_b64 = []
-        if (
-            self._intensity_img_renderer
-            and event_type not in ("earthquake_warning", "eew")
-            and not source_id.startswith(("jma_", "cwa_"))
-        ):
-            mag = r.get("magnitude")
-            depth = r.get("depth")
+        if self._intensity_img_renderer and not source_id.startswith(("jma_", "cwa_")):
+            is_eligible = (
+                event_type not in ("earthquake_warning", "eew")
+                or source_id == "global_quake"
+            )
+            if is_eligible:
+                mag = r.get("magnitude")
+                depth = r.get("depth")
             if mag is not None:
                 try:
                     s_path, i_path = self._intensity_img_renderer.render_both(

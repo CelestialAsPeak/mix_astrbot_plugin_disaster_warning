@@ -65,7 +65,7 @@ class GlobalQuakeCardBuilder:
             envelope: EventEnvelope（含 EewEvent）
             template_name: "Aurora" 或 "DarkNight"
             map_source: 地图源名称
-            tile_url: 地图瓦片 URL（JS 模板）
+            tile_url: 地图瓦片 URL（JS 模板），为空则从 map_source 自动获取
             zoom_level: 地图初始缩放级别
             viewport: 浏览器视口大小
 
@@ -76,6 +76,14 @@ class GlobalQuakeCardBuilder:
             event = envelope.event
             metadata = envelope.metadata
             identity = envelope.identity
+
+            # 自动解析 tile_url（如果未传入）
+            if not tile_url:
+                try:
+                    from ...utils.map_tile_sources import get_tile_url_js
+                    tile_url = get_tile_url_js(map_source)
+                except Exception:
+                    pass
 
             # 1. 构建展示上下文
             context = build_gq_card_context(

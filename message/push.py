@@ -218,6 +218,17 @@ class PushExecutionService:
                     for b64 in snet_b64:
                         chain_components.append(Image.fromBase64(b64))
             elif is_gq and self.gq_card_builder:
+                # GQ 震度/烈度预览图
+                if self.intensity_img_renderer:
+                    ev = envelope.event
+                    if ev.magnitude is not None:
+                        s_path, i_path = self.intensity_img_renderer.render_both(
+                            ev.magnitude, ev.depth or 10.0,
+                        )
+                        for p in (s_path, i_path):
+                            if p and os.path.exists(p):
+                                with open(p, "rb") as f:
+                                    chain_components.append(Image.fromBase64(base64.b64encode(f.read()).decode()))
                 # GlobalQuake 专用卡片（含震中地图）
                 gq_b64 = await self._render_gq_card(envelope)
                 if gq_b64:
