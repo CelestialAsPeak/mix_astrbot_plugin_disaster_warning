@@ -834,6 +834,8 @@ class MixDisasterWarningPlugin(Star):
 
     async def _handle_http_poll_result(self, source_id: str, raw_data: Any) -> None:
         """HTTP 轮询结果处理：取最新一条，首条不推，变化才推。"""
+        import re
+        from datetime import datetime, timezone
         try:
             from .parser.registry import ParserRegistry
         except ImportError:
@@ -851,9 +853,23 @@ class MixDisasterWarningPlugin(Star):
         if not envelopes:
             return
 
-        # 取最新一条（解析器返回顺序 = 时间倒序）
+        # 按发生时间降序排序，确保取到最新一条
+        # 部分 API 返回正序（旧→新），不能直接用 envelopes[0]
+        _epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+        try:
+            envelopes.sort(
+                key=lambda e: e.event.occurred_at if e.event.occurred_at is not None else _epoch,
+                reverse=True,
+            )
+        except TypeError:
+            # 混合 naive/aware datetime 兜底，维持解析器原始顺序
+            pass
         newest = envelopes[0]
         eid = newest.identity.event_id
+
+        # ── NRCan md5 回退警告 ──
+        if source_id == "nrcan_http" and len(eid) == 12 and not re.search(r'\d{4,}', eid):
+            logger.warning(f"[HTTP] nrcan_http event_id 疑似 md5 回退: {eid}，注意 ID 可能不稳定")
 
         # 比较上次推送过的 ID
         last = self._http_last_event.get(source_id)
@@ -864,14 +880,20 @@ class MixDisasterWarningPlugin(Star):
             return
 
         if eid == last.get("event_id"):
-            # 没有变化，跳过
+            # 没有变化，跳过（debug 级别避免刷日志）
             return
 
-        # 有新事件 → 推送，更新记录
-        self._http_last_event[source_id] = {"event_id": eid}
+        # 有新事件 → 推送，成功后更新记录
         logger.info(f"[HTTP] {source_id} 发现新事件: {eid}")
         if self.pipeline:
-            await self.pipeline.handle(newest)
+            try:
+                await self.pipeline.handle(newest)
+            except Exception as ex:
+                logger.error(f"[HTTP] {source_id} pipeline.handle 失败: {ex}")
+                return  # 不更新 last_event_id，下次轮询重试
+
+        # 推送成功后才更新记录
+        self._http_last_event[source_id] = {"event_id": eid}
 
     def _setup_http_pollers(self, sources: dict, router: MessageRouter):
         # ⚠️ ICL（成都高新减灾研究所）属于未公开/非官方数据源，

@@ -65,6 +65,7 @@ origin: https://github.com/CelestialAsPeak/mix_astrbot_plugin_disaster_warning.g
 - 全部 22 个过滤器新增 `最小烈度`（slider+hint），含 3 个新增（csnc/tmd/phivolcs 过滤器）（2026-06-24 修复）
 - `EarthquakeThresholdRule` section 1 全部改用 OR 逻辑：震级够 **或** 烈度够即推（2026-06-24 修复）
 - 验证器 `_validate_earthquake_filters`：震度过滤器（jma/cwa/snet）不再添加 `最小烈度`；S-Net `min_magnitude` 自动迁移到 `min_shindo`（2026-06-24 修复）
+- HTTP 轮询改用 "状态变化" 推送：`_handle_http_poll_result` 每次只取最新一条，首条仅记录不推送，event_id 变化才推。解决列表类源（PHIVOLCS等）重启后 flood（2026-06-24 修复）
 
 ## 踩坑记录
 
