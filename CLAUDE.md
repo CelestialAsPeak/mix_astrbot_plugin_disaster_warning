@@ -11,6 +11,12 @@
 > ⚠ 两个目录是独立副本。在 `.astrbot/` 改完必须 cp 到 AppData/ 才生效。
 > `rsync -av --delete --exclude='__pycache__' --exclude='.git' .astrbot/.../ AppData/.../`
 
+### 入口文件
+
+`main.py` 仅作兼容转发（AstrBot StarManager 优先加载它），实际业务代码在 `plugin.py`。
+两个目录都有 `main.py`，内容都是 `from plugin import MixDisasterWarningPlugin`。
+**以后只维护 `plugin.py`。**
+
 ## Git 远程
 
 ```
