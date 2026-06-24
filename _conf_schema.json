@@ -1720,7 +1720,1076 @@
   "sleep_earthquake_filters": {
     "description": "🌙 睡眠模式地震过滤配置",
     "type": "object",
-    "hint": "格式与 earthquake_filters 完全一致，但用于睡眠模式群组。\n未在此处配置的数据源自动回退到普通 earthquake_filters 的对应值。\n注意：这是全局睡眠阈值，所有睡眠模式群组共用。\n如需更细粒度控制，可用 /灾害预警群组 命令设置群组级差异覆盖",
-    "items": {}
+    "hint": "每个数据源的震级/烈度睡眠阈值，与普通模式格式完全一致。\n未在此处配置的源自动回退到普通 earthquake_filters 的对应值。\n只需调整你想在睡眠时加严的源，其他保持空白即可。",
+    "items": {
+      "keyword_filter": {
+        "description": "🌙 睡眠关键词过滤器",
+        "type": "object",
+        "hint": "适用于所有地震信息，支持黑名单和白名单",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": false
+          },
+          "blacklist": {
+            "description": "黑名单关键词",
+            "type": "list",
+            "hint": "包含这些关键词的地震信息将被过滤",
+            "default": []
+          },
+          "whitelist": {
+            "description": "白名单关键词",
+            "type": "list",
+            "hint": "设置后只有包含这些关键词的地震信息才会推送。留空不启用白名单",
+            "default": []
+          }
+        }
+      },
+      "intensity_filter": {
+        "description": "🌙 睡眠震级/烈度过滤器（通用）",
+        "type": "object",
+        "hint": "OR逻辑：震级够 或 烈度够 任一满足即可推送",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "hint": "震级≥此值时推送（OR逻辑：震级和烈度满足一个即可）",
+            "default": 2.0,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            }
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度",
+            "default": 4.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            }
+          }
+        }
+      },
+      "magnitude_only_filter": {
+        "description": "🌙 睡眠USGS等仅震级过滤器",
+        "type": "object",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 4.5,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
+          }
+        }
+      },
+      "global_quake_filter": {
+        "description": "🌙 睡眠Global Quake专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 5.5,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送（不在白名单内的全球地震用此阈值）"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 5.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
+          },
+          "gq_place_whitelist": {
+            "description": "地名白名单（逗号分隔）",
+            "type": "string",
+            "default": "中国,日本,台湾,菲律宾,印尼,印度尼西亚,新西兰",
+            "hint": "中文震中位置包含任一关键词则直接推送（绕过震级/烈度阈值），适合关注特定区域"
+          }
+        }
+      },
+      "emsc_filter": {
+        "description": "🌙 睡眠EMSC 专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 4.5,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 5.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
+          }
+        }
+      },
+      "gfz_filter": {
+        "description": "🌙 睡眠GFZ 专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 4.5,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 5.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
+          }
+        }
+      },
+      "bcsf_filter": {
+        "description": "🌙 睡眠BCSF 专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 4.5,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 5.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
+          }
+        }
+      },
+      "usp_filter": {
+        "description": "🌙 睡眠USP 专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 4.5,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 5.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
+          }
+        }
+      },
+      "hko_filter": {
+        "description": "🌙 睡眠HKO 专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 4.5,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 5.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
+          }
+        }
+      },
+      "fssn_filter": {
+        "description": "🌙 睡眠FSSN 专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 4.5,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 5.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
+          }
+        }
+      },
+      "kma_filter": {
+        "description": "🌙 睡眠KMA 专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 4.5,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 5.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
+          }
+        }
+      },
+      "sa_filter": {
+        "description": "🌙 睡眠ShakeAlert 专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 4.5,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 5.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
+          }
+        }
+      },
+      "kma_eew_filter": {
+        "description": "🌙 睡眠KMA 韩国预警专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 4.5,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 5.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
+          }
+        }
+      },
+      "ningxia_filter": {
+        "description": "🌙 睡眠宁夏地震台网专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 3.0,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 4.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
+          }
+        }
+      },
+      "guangxi_filter": {
+        "description": "🌙 睡眠广西地震台网专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 3.0,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 4.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
+          }
+        }
+      },
+      "shanxi_filter": {
+        "description": "🌙 睡眠山西地震台网专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 3.0,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 4.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
+          }
+        }
+      },
+      "beijing_filter": {
+        "description": "🌙 睡眠北京地震台网专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 3.0,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 4.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
+          }
+        }
+      },
+      "yunnan_filter": {
+        "description": "🌙 睡眠云南地震台网专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 3.0,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 4.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
+          }
+        }
+      },
+      "geonet_filter": {
+        "description": "🌙 睡眠GeoNet 新西兰专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 4.5,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 5.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
+          }
+        }
+      },
+      "nrcan_filter": {
+        "description": "🌙 睡眠NRCan 加拿大专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 4.5,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 5.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
+          }
+        }
+      },
+      "usgs_weekly_filter": {
+        "description": "🌙 睡眠USGS 全球周报专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 4.5,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 5.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
+          }
+        }
+      },
+      "funvisis_filter": {
+        "description": "🌙 睡眠FUNVISIS 委内瑞拉专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 3.0,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 4.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
+          }
+        }
+      },
+      "cenais_filter": {
+        "description": "🌙 睡眠CENAIS 古巴专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 3.0,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 4.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
+          }
+        }
+      },
+      "icl_filter": {
+        "description": "🌙 睡眠ICL 成都高新减灾研究所专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 3.0,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 4.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
+          }
+        }
+      },
+      "snet_filter": {
+        "description": "🌙 睡眠S-Net 海底震度专用过滤器",
+        "type": "object",
+        "hint": "基于 S-Net 海底测站实测震度过滤（日本震度标准，0-7级）",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_shindo": {
+            "description": "最小触发震度（日本标准，含负值）",
+            "type": "float",
+            "hint": "有测站实测震度≥此值时推送。可设为负值以捕获微震，如 -3.0 包含所有可用测站",
+            "default": 0.5,
+            "slider": {
+              "min": -5.0,
+              "max": 7.0,
+              "step": 0.1
+            }
+          }
+        }
+      },
+      "jma_scale_filter": {
+        "description": "🌙 睡眠JMA（日本气象厅）震度过滤器",
+        "type": "object",
+        "hint": "适用于日本气象厅紧急地震速报和地震情报。使用 OR 逻辑：满足震级 或 满足震度即可推送",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "hint": "震级大于等于此值时推送（OR逻辑）",
+            "default": 2.0,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            }
+          },
+          "min_shindo": {
+            "description": "最小震度（日本标准）",
+            "type": "float",
+            "hint": "JMA 震度大于等于此值时推送。日本震度 0-7 级，7为最大",
+            "default": 1.0,
+            "slider": {
+              "min": 0.0,
+              "max": 7.0,
+              "step": 0.1
+            }
+          }
+        }
+      },
+      "cwa_scale_filter": {
+        "description": "🌙 睡眠CWA（台湾中央气象署）震度过滤器",
+        "type": "object",
+        "hint": "适用于台湾强震即时警报和地震报告。使用 OR 逻辑：满足震级 或 满足震度即可推送",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "hint": "震级大于等于此值时推送（OR逻辑）",
+            "default": 2.0,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            }
+          },
+          "min_shindo": {
+            "description": "最小震度（台湾标准）",
+            "type": "float",
+            "hint": "CWA 震度大于等于此值时推送",
+            "default": 1.0,
+            "slider": {
+              "min": 0.0,
+              "max": 7.0,
+              "step": 0.1
+            }
+          }
+        }
+      },
+      "sc_eew_filter": {
+        "description": "🌙 睡眠四川 EEW 专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 3.0,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 4.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
+          }
+        }
+      },
+      "fj_eew_filter": {
+        "description": "🌙 睡眠福建 EEW 专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 3.0,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 4.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
+          }
+        }
+      },
+      "cq_eew_filter": {
+        "description": "🌙 睡眠重庆 EEW 专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 3.0,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 4.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
+          }
+        }
+      },
+      "csnc_filter": {
+        "description": "🌙 睡眠CSNC 智利专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 4.5,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 5.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
+          }
+        }
+      },
+      "tmd_filter": {
+        "description": "🌙 睡眠TMD 泰国专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 4.5,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 5.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
+          }
+        }
+      },
+      "phivolcs_filter": {
+        "description": "🌙 睡眠PHIVOLCS 菲律宾专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 3.0,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 4.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
+          }
+        }
+      }
+    }
   }
 }
