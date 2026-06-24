@@ -262,6 +262,7 @@ class BrowserManager:
         start_time = time.time()
 
         acquired_semaphore = False
+        page_broken = False  # 标记页面是否损坏，损坏的页面不放回池
         console_messages: list[str] = []
         page_errors: list[str] = []
         request_failures: list[str] = []
@@ -442,15 +443,22 @@ class BrowserManager:
                             await page.set_viewport_size(original_viewport)
                         except Exception:
                             pass
-                    # 本地模式：归还页面到池
+                    # 页面损坏时不放回池（避免下次取出坏页面）
                     if page:
-                        await self._page_pool.put(page)
+                        if page_broken:
+                            try:
+                                await page.close()
+                            except Exception:
+                                pass
+                        else:
+                            await self._page_pool.put(page)
             finally:
                 # 释放信号量
                 if acquired_semaphore:
                     self._semaphore.release()
 
         except Exception as e:
+            page_broken = True
             logger.error(f"[灾害预警] 卡片渲染失败: {e}")
             # 上报卡片渲染错误到遥测
             if self._telemetry and self._telemetry.enabled:
@@ -468,14 +476,19 @@ class BrowserManager:
                 # 恢复页面池
                 async with self._page_creation_lock:
                     try:
-                        if self._browser and not self._closed:
-                            if self._page_pool.qsize() < self.pool_size:
+                        if not self._browser or self._closed:
+                            return None
+                        if self._page_pool.qsize() < self.pool_size:
+                            try:
                                 new_page = await self._browser.new_page(
                                     viewport={"width": 800, "height": 800},
                                     device_scale_factor=2,
                                 )
                                 await self._page_pool.put(new_page)
                                 logger.debug("[灾害预警] 已重新创建页面")
+                            except Exception as browser_err:
+                                logger.warning(f"[灾害预警] 浏览器可能已死，尝试重启: {browser_err}")
+                                await self._restart_browser()
                     except Exception as recover_err:
                         logger.error(f"[灾害预警] 页面恢复失败: {recover_err}")
 
@@ -619,6 +632,16 @@ class BrowserManager:
             logger.warning(
                 f"[灾害预警] 资源清理过程中遇到 {len(cleanup_errors)} 个错误"
             )
+
+    async def _restart_browser(self):
+        """重启浏览器（浏览器进程死亡时调用）。"""
+        logger.warning("[灾害预警] 正在重启浏览器...")
+        await self._cleanup()
+        try:
+            await self.initialize()
+            logger.info("[灾害预警] 浏览器重启成功")
+        except Exception as e:
+            logger.error(f"[灾害预警] 浏览器重启失败: {e}")
 
     def __del__(self):
         """析构函数 - 确保资源释放"""

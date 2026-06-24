@@ -287,6 +287,15 @@ def present_eew(event: EewEvent) -> str:
             label = f"緊急地震速報（{warn_str}）"
     else:
         label = _get_event_label(event.source_id, "EEW")
+        # 非 JMA 源：恢复报次到标题（对齐旧版格式）
+        _parts = []
+        if event.report_num:
+            _parts.append(f"第{event.report_num}报")
+        if event.is_final:
+            _parts.append("最终报")
+        _report_tag = " ".join(_parts)
+        if _report_tag:
+            label = f"{label}-{_report_tag}"
 
     title = _make_source_title(event.source_id, label, name_suffix)
     lines = [title]
