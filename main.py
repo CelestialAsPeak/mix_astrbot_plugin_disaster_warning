@@ -225,6 +225,8 @@ class MixDisasterWarningPlugin(Star):
         self._typhoon_renderer: TyphoonMapRenderer | None = None
         # SNET 测站分布图渲染器
         self._snet_renderer: SnetMapRenderer | None = None
+        # 震度/烈度图片渲染器
+        self._intensity_img_renderer: "IntensityImageRenderer | None" = None
         import sys as _sys
         _sys.stderr.write(f"[MIX_DBG] __init__ _map_builder={self._map_builder is not None}\n")
         _sys.stderr.flush()
@@ -266,6 +268,11 @@ class MixDisasterWarningPlugin(Star):
             self._snet_renderer = SnetMapRenderer(self.browser_manager, self._plugin_root)
             logger.info("[Mix] SNET 测站图渲染器就绪")
 
+            # 震度/烈度图片渲染器
+            from .message.render.intensity_image_renderer import IntensityImageRenderer
+            self._intensity_img_renderer = IntensityImageRenderer(self._temp_dir)
+            logger.info("[Mix] 震度/烈度图片渲染器就绪")
+
             # GlobalQuake 专属卡片构建器
             from .message.builders.global_quake_card_builder import GlobalQuakeCardBuilder
             self._gq_card_builder = GlobalQuakeCardBuilder(
@@ -299,6 +306,7 @@ class MixDisasterWarningPlugin(Star):
             push_svc = PushExecutionService(
                 dict(self.config), session_sender, map_builder=self._map_builder,
                 snet_renderer=self._snet_renderer, gq_card_builder=self._gq_card_builder,
+                intensity_img_renderer=self._intensity_img_renderer,
             )
             self._orchestrator = PushOrchestrator(dict(self.config), push_svc.execute_push, sender=session_sender)
 

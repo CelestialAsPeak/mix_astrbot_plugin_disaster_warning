@@ -55,12 +55,13 @@ class SessionSender:
 class PushExecutionService:
     """推送执行服务。"""
 
-    def __init__(self, config: dict, sender: SessionSender, map_builder=None, snet_renderer=None, gq_card_builder=None):
+    def __init__(self, config: dict, sender: SessionSender, map_builder=None, snet_renderer=None, gq_card_builder=None, intensity_img_renderer=None):
         self.config = config
         self.sender = sender
         self.map_builder = map_builder
         self.snet_renderer = snet_renderer
         self.gq_card_builder = gq_card_builder
+        self.intensity_img_renderer = intensity_img_renderer
 
     async def _render_event_map(self, envelope: EventEnvelope) -> list[str] | None:
         """渲染震中地图（缩略图 + 细节图），返回 base64 列表。"""
@@ -192,6 +193,22 @@ class PushExecutionService:
 
             # 构建消息链（文本 + 地图图片）
             chain_components = [Plain(text)]
+
+            # 震度/烈度预览图（仅地震报告，非 JMA/CWA 源）
+            if (
+                self.intensity_img_renderer
+                and isinstance(envelope.event, EarthquakeReport)
+                and not envelope.source_id.startswith(("jma_", "cwa_"))
+            ):
+                ev = envelope.event
+                if ev.magnitude is not None:
+                    s_path, i_path = self.intensity_img_renderer.render_both(
+                        ev.magnitude, ev.depth or 10.0,
+                    )
+                    for p in (s_path, i_path):
+                        if p and os.path.exists(p):
+                            with open(p, "rb") as f:
+                                chain_components.append(Image.fromBase64(base64.b64encode(f.read()).decode()))
             # S-Net 专用测站分布图
             is_snet = envelope.source_id in ("snet_http", "snet") and isinstance(envelope.event, EarthquakeReport)
             is_gq = envelope.source_id == "global_quake" and isinstance(envelope.event, EewEvent)
