@@ -34,7 +34,7 @@ class SessionConfigManager:
     OVERRIDES_FILE = "group_overrides.json"
 
     # 群组可覆盖的字段白名单
-    ALLOWED_KEYS = {"earthquake_filters", "sleep_earthquake_filters", "message_format", "enabled"}
+    ALLOWED_KEYS = {"earthquake_filters", "message_format", "enabled"}
 
     def __init__(self, global_config: dict[str, Any] | None = None):
         self.global_config = global_config or {}
@@ -121,25 +121,17 @@ class SessionConfigManager:
         return merged
 
     def get_group_sleep_filters(self, group_id: str) -> dict[str, Any]:
-        """获取指定群组的 sleep_earthquake_filters（睡眠模式阈值）。
+        """获取睡眠模式阈值。
 
-        未在睡眠模式配置中显式指定的源 → 回退到普通 earthquake_filters，
-        实现"复制一份再改"的效果。
+        用全局 sleep_earthquake_filters 覆盖到普通 filters 上，
+        未在 sleep_earthquake_filters 中显式指定的源 → 回退到普通阈值。
         """
-        # 1. 先拿到普通 filters 作为基底（回退）
         normal = self.get_group_filters(group_id)
-        # 2. 睡眠模式 override（优先级最高）
-        sleep_override = self._overrides.get(group_id, {}).get("sleep_earthquake_filters", {})
-        # 3. 群组静态配置中的 sleep_earthquake_filters
-        all_groups = self.list_groups()
-        static = all_groups.get(group_id, {})
-        sleep_static = static.get("sleep_earthquake_filters", {})
-        if isinstance(sleep_static, dict):
-            sleep_overrides = self._deep_merge(sleep_override, sleep_static)
-        else:
-            sleep_overrides = sleep_override
-        # 4. 合并：睡眠配置覆盖到普通配置上（未指定的源保持普通配置）
-        merged = self._deep_merge(normal, sleep_overrides)
+        sleep = self.global_config.get("sleep_earthquake_filters", {})
+        if not isinstance(sleep, dict) or not sleep:
+            return normal
+        # 合并：sleep 覆盖到 normal 上（未指定源保持 normal）
+        merged = self._deep_merge(normal, sleep)
         return merged
 
     def get_group_sessions(self, group_id: str) -> list[str]:
@@ -232,7 +224,7 @@ class SessionConfigManager:
         sessions = self.get_group_sessions(group_id)
         filters = self.get_group_filters(group_id)
         sleep_filters = self.get_group_sleep_filters(group_id)
-        sleep_mode = cfg.get("sleep_mode", False)
+        sleep_mode = group_id in (self.global_config.get("sleep_mode_groups", []) or [])
 
         lines = [f"📢 群组: {group_id}"]
         lines.append(f"  会话: {sessions}")

@@ -150,12 +150,10 @@ class EventPipeline:
             # 将群组过滤配置合并到上下文中
             group_config = dict(self.config)
             if self.session_manager:
-                # 检查群组是否启用了睡眠模式
-                all_groups = self.session_manager.list_groups()
-                group_meta = all_groups.get(group_id, {})
-                sleep_mode = group_meta.get("sleep_mode", False) if isinstance(group_meta, dict) else False
+                # 检查群组是否在睡眠模式列表中
+                sleep_mode_groups = self.config.get("sleep_mode_groups", [])
+                sleep_mode = group_id in sleep_mode_groups
                 if sleep_mode:
-                    # 睡眠模式：用 sleep_earthquake_filters，未指定的源回退到普通配置
                     gf = self.session_manager.get_group_sleep_filters(group_id)
                 else:
                     gf = self.session_manager.get_group_filters(group_id)
@@ -164,7 +162,7 @@ class EventPipeline:
                     ef.update(gf)
                     group_config["earthquake_filters"] = ef
                     if sleep_mode:
-                        logger.debug(f"[Pipeline] 群 {group_id} 睡眠模式启用，使用睡眠阈值评估")
+                        logger.debug(f"[Pipeline] 群 {group_id} 睡眠模式启用")
 
             # 对阈值规则重新评估（用合并后的群组配置）
             group_accepted = True

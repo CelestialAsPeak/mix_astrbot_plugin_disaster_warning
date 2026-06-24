@@ -1222,9 +1222,9 @@ class MixDisasterWarningPlugin(Star):
         lines = ["📢 群组列表"]
         for gid in groups:
             sessions = self.session_config_manager.get_group_sessions(gid)
-            # 获取群组元信息（sleep_mode）
-            gcfg = groups.get(gid, {})
-            sleep_mode = gcfg.get("sleep_mode", False) if isinstance(gcfg, dict) else False
+            # 检查群组是否在睡眠模式列表中
+            sleep_mode_groups = self.session_config_manager.global_config.get("sleep_mode_groups", []) or []
+            sleep_mode = gid in sleep_mode_groups
             gf = self.session_config_manager.get_group_filters(gid)
             filter_count = sum(1 for v in gf.values() if isinstance(v, dict)) if isinstance(gf, dict) else 0
             sleep_icon = "🌙" if sleep_mode else "☀️"

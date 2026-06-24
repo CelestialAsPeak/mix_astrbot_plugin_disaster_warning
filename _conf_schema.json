@@ -20,7 +20,7 @@
   "groups": {
     "description": "📢 多群组推送配置",
     "type": "object",
-    "hint": "每个群组独立设置推送会话和阈值过滤。\n键=群组ID，值={sessions:[会话ID], earthquake_filters:{数据源:{阈值}}, sleep_mode:bool, sleep_earthquake_filters:{...}}\nsleep_mode=true 时该群使用 sleep_earthquake_filters 阈值（未指定的源回退到普通配置）\n也可用命令 /灾害预警群组 管理",
+    "hint": "每个群组独立设置推送会话和阈值过滤。\n键=群组ID，值={sessions:[会话ID], earthquake_filters:{数据源:{阈值}}}\n也可用命令 /灾害预警群组 管理",
     "default": {},
     "items": {}
   },
@@ -1710,5 +1710,17 @@
         "default": 300
       }
     }
+  },
+  "sleep_mode_groups": {
+    "description": "🌙 睡眠模式群组列表",
+    "type": "list",
+    "hint": "填入群组ID，这些群组将使用睡眠模式震级筛选政策（阈值为下方 sleep_earthquake_filters）\n不在列表内的群组使用普通阈值",
+    "default": []
+  },
+  "sleep_earthquake_filters": {
+    "description": "🌙 睡眠模式地震过滤配置",
+    "type": "object",
+    "hint": "格式与 earthquake_filters 完全一致，但用于睡眠模式群组。\n未在此处配置的数据源自动回退到普通 earthquake_filters 的对应值。\n注意：这是全局睡眠阈值，所有睡眠模式群组共用。\n如需更细粒度控制，可用 /灾害预警群组 命令设置群组级差异覆盖",
+    "items": {}
   }
 }
