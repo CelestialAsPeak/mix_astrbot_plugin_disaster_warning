@@ -1719,7 +1719,15 @@ class MixDisasterWarningPlugin(Star):
                 yield e.plain_result("📡 S-net 未解析到测站")
                 return
 
-        triggered = [s for s in stations if s["shindo"] >= 0]
+        # 从配置读取用户设置的 min_shindo 阈值，替代硬编码 >= 0
+        _qms = 0.0
+        try:
+            _qf = self.config.get("earthquake_filters", {}).get("snet_filter", {})
+            if isinstance(_qf, dict):
+                _qms = float(_qf.get("min_shindo", 0.0))
+        except Exception:
+            pass
+        triggered = [s for s in stations if s["shindo"] >= _qms]
         text_parts = [f"[NIED S-Net海底震度分布]"]
         text_parts.append(f"触发方式：{'调试' if args else '手动触发'}")
         text_parts.append(f"触发测站数量：{len(triggered)}/{len(stations)}")

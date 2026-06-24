@@ -136,11 +136,11 @@ class ConfigValidator:
             if isinstance(filter_cfg, dict):
                 # ── 震度过滤器：不添加 最小烈度 ──
                 if source_id in _SHINDO_FILTERS:
-                    filter_cfg.setdefault("min_shindo", 0.5)
-                    # S-Net 旧版用 min_magnitude 存震度阈值 → 迁移到 min_shindo
+                    # ⚠ 先迁移旧 key（setdefault 前），防止 setdefault 覆盖
                     if "min_magnitude" in filter_cfg and "min_shindo" not in filter_cfg:
                         if filter_cfg["min_magnitude"] != 0.0:
-                            filter_cfg["min_shindo"] = filter_cfg["min_magnitude"]
+                            filter_cfg["min_shindo"] = filter_cfg.pop("min_magnitude")
+                    filter_cfg.setdefault("min_shindo", 0.5)
                     # 清理震度过滤器上不应出现的旧 key 残留
                     for _old_k in ("最小烈度", "烈度", "min_intensity"):
                         filter_cfg.pop(_old_k, None)
