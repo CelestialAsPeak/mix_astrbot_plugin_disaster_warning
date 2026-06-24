@@ -194,48 +194,55 @@ class PushExecutionService:
             # 构建消息链（文本 + 地图图片）
             chain_components = [Plain(text)]
 
-            # 震度/烈度预览图（仅地震报告，非 JMA/CWA/SNET 源）
-            if (
-                self.intensity_img_renderer
-                and isinstance(envelope.event, EarthquakeReport)
-                and envelope.source_id not in ("snet_http", "snet")
-                and not envelope.source_id.startswith(("jma_", "cwa_"))
-            ):
-                ev = envelope.event
-                if ev.magnitude is not None:
-                    s_path, i_path = self.intensity_img_renderer.render_both(
-                        ev.magnitude, ev.depth or 10.0,
-                    )
-                    for p in (s_path, i_path):
-                        if p and os.path.exists(p):
-                            with open(p, "rb") as f:
-                                chain_components.append(Image.fromBase64(base64.b64encode(f.read()).decode()))
-            # S-Net 专用测站分布图
+            # ── 图片选择 ──
+            is_eew = isinstance(envelope.event, EewEvent)
             is_snet = envelope.source_id in ("snet_http", "snet") and isinstance(envelope.event, EarthquakeReport)
-            is_gq = envelope.source_id == "global_quake" and isinstance(envelope.event, EewEvent)
-            if is_snet:
+            is_gq = envelope.source_id == "global_quake" and is_eew
+
+            # 本地辅助：将图片路径附加到消息链
+            def _img(path: str | None):
+                if path and os.path.exists(path):
+                    with open(path, "rb") as f:
+                        chain_components.append(Image.fromBase64(base64.b64encode(f.read()).decode()))
+
+            if is_gq and self.gq_card_builder:
+                # GlobalQuake 专属卡
+                if self.intensity_img_renderer:
+                    ev = envelope.event
+                    if ev.magnitude is not None:
+                        for p in self.intensity_img_renderer.render_both(ev.magnitude, ev.depth or 10.0):
+                            _img(p)
+                gq_b64 = await self._render_gq_card(envelope)
+                if gq_b64:
+                    chain_components.append(Image.fromBase64(gq_b64))
+
+            elif is_snet:
+                # S-Net 测站分布图
                 snet_b64 = await self._render_snet_map(envelope)
                 if snet_b64:
                     for b64 in snet_b64:
                         chain_components.append(Image.fromBase64(b64))
-            elif is_gq and self.gq_card_builder:
-                # GQ 震度/烈度预览图
-                if self.intensity_img_renderer:
-                    ev = envelope.event
-                    if ev.magnitude is not None:
-                        s_path, i_path = self.intensity_img_renderer.render_both(
-                            ev.magnitude, ev.depth or 10.0,
-                        )
-                        for p in (s_path, i_path):
-                            if p and os.path.exists(p):
-                                with open(p, "rb") as f:
-                                    chain_components.append(Image.fromBase64(base64.b64encode(f.read()).decode()))
-                # GlobalQuake 专用卡片（含震中地图）
-                gq_b64 = await self._render_gq_card(envelope)
-                if gq_b64:
-                    chain_components.append(Image.fromBase64(gq_b64))
+
+            elif is_eew and self.intensity_img_renderer:
+                # EEW → 只用震度+烈度图（本地缓存快，不用 Playwright 方位图）
+                ev = envelope.event
+                if ev.magnitude is not None:
+                    for p in self.intensity_img_renderer.render_both(ev.magnitude, ev.depth or 10.0):
+                        _img(p)
+
+            elif isinstance(envelope.event, EarthquakeReport) and self.intensity_img_renderer:
+                # 地震报告 → 震度+烈度图 + 方位图（不赶时间）
+                ev = envelope.event
+                if ev.magnitude is not None:
+                    for p in self.intensity_img_renderer.render_both(ev.magnitude, ev.depth or 10.0):
+                        _img(p)
+                map_b64_list = await self._render_event_map(envelope)
+                if map_b64_list:
+                    for b64 in map_b64_list:
+                        chain_components.append(Image.fromBase64(b64))
+
             else:
-                # 地震震中图
+                # 其他 → 震中方位图
                 map_b64_list = await self._render_event_map(envelope)
                 if map_b64_list:
                     for b64 in map_b64_list:

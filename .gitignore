@@ -30,3 +30,4 @@ temp/
 *.png
 *.jpg
 test_*.py
+cache/

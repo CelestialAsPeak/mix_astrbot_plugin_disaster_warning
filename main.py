@@ -273,7 +273,7 @@ class MixDisasterWarningPlugin(Star):
 
             # 震度/烈度图片渲染器
             from .message.render.intensity_image_renderer import IntensityImageRenderer
-            self._intensity_img_renderer = IntensityImageRenderer(self._temp_dir)
+            self._intensity_img_renderer = IntensityImageRenderer(os.path.join(self._plugin_root, "cache"))
             logger.info("[Mix] 震度/烈度图片渲染器就绪")
 
             # GlobalQuake 专属卡片构建器

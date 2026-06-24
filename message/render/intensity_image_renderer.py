@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import math
 import os
+import re
 
 try:
     from astrbot.api import logger
@@ -64,6 +65,49 @@ _SHINDO_INDEX: dict[str, int] = {
 
 # 罗马数字
 _ROMAN: list[str] = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"]
+
+
+def _normalize_shindo(label: str) -> str:
+    """统一各种震度标签格式 → 内部键（"0"-"7"、"5-"/"5+"、"6-"/"6+"）。
+
+    支持的输入格式：
+      - "震度5弱" / "5弱" / "5-" → "5-"
+      - "震度5強" / "5強" / "5+" → "5+"
+      - "震度7"   / "7"          → "7"
+      - "震度0"～"震度4"         → "0"～"4"
+    """
+    s = label.strip()
+    # 去掉 "震度" 前缀
+    s = s.replace("震度", "")
+    # 中文字 → 符号
+    s = s.replace("弱", "-").replace("強", "+").replace("强", "+")
+    # 直接命中
+    if s in _SHINDO_INDEX:
+        return s
+    # 尝试纯数字
+    try:
+        v = float(s)
+    except ValueError:
+        return "0"
+    if v <= 0.5:
+        return "0"
+    if v <= 1.5:
+        return "1"
+    if v <= 2.5:
+        return "2"
+    if v <= 3.5:
+        return "3"
+    if v <= 4.5:
+        return "4"
+    if v <= 5.0:
+        return "5-"
+    if v <= 5.5:
+        return "5+"
+    if v <= 6.0:
+        return "6-"
+    if v <= 6.5:
+        return "6+"
+    return "7"
 
 # 微软雅黑粗体路径
 _FONT_PATH = "C:/Windows/Fonts/msyhbd.ttc"
@@ -213,6 +257,30 @@ class IntensityImageRenderer:
         color = _get_csis_color(csis)
         cache_path = self._cache_key("intensity", mag, depth)
         return self._render_single(cache_path, "预估最大烈度", roman, color)
+
+    def _cache_key_actual(self, prefix: str, value_str: str) -> str:
+        """生成基于实际值（而非震级+深度）的缓存文件名。"""
+        safe = re.sub(r'[\\/:*?"<>|]', '_', value_str)
+        return os.path.join(self.cache_dir, f"{prefix}_{_CACHE_VERSION}_{safe}.png")
+
+    def render_shindo_actual(self, shindo_label: str, display_label: str = "最大震度") -> str | None:
+        """用实际 JMA 震度数据渲染（不估算）。"""
+        shindo_key = _normalize_shindo(shindo_label)
+        color = _get_shindo_color(shindo_key)
+        cache_path = self._cache_key_actual("shindo_actual", shindo_label)
+        return self._render_single(cache_path, display_label, shindo_label, color)
+
+    def render_intensity_actual(self, mmi_str: str, display_label: str = "最大烈度") -> str | None:
+        """用实际 MMI/烈度数据渲染（不估算）。"""
+        try:
+            mmi = float(mmi_str)
+        except (ValueError, TypeError):
+            mmi = 6.0
+        val = max(1, min(12, int(round(mmi))))
+        roman = _ROMAN[val - 1]
+        color = _get_csis_color(float(val))
+        cache_path = self._cache_key_actual("intensity_actual", str(val))
+        return self._render_single(cache_path, display_label, roman, color)
 
     def render_both(self, mag: float, depth: float = 10.0) -> tuple[str | None, str | None]:
         """渲染震度+烈度两张图。"""
