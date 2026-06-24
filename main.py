@@ -1029,7 +1029,12 @@ class MixDisasterWarningPlugin(Star):
         if wolfx_sources and self.database:
             lines.append("  ── Wolfx 源 ──")
             for sid in wolfx_sources:
-                rows = await self._query_source_events(sid, 1)
+                # EEW 源（含 _wolfx 后缀不含 _info 的）查 eew 表，情报源查 earthquake 表
+                is_eew = "_info" not in sid
+                if is_eew:
+                    rows = await self._query_source_eew(sid, 1)
+                else:
+                    rows = await self._query_source_events(sid, 1)
                 if rows:
                     r = rows[0]
                     t = _fmt_time_short(r.get("time", ""))
