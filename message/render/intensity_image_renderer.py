@@ -23,7 +23,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 # ── 图片尺寸 ──
 IMAGE_WIDTH = 750
-IMAGE_HEIGHT = 200
+IMAGE_HEIGHT = 220
 
 # ── CSIS 12 级烈度配色（CAPQuakeQt CSIS_COLORS） ──
 CSIS_COLORS: list[tuple[int, int, int]] = [
