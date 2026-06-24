@@ -22,7 +22,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 
 # ── 图片尺寸 ──
-IMAGE_WIDTH = 480
+IMAGE_WIDTH = 250
 IMAGE_HEIGHT = 90
 
 # ── CSIS 12 级烈度配色（CAPQuakeQt CSIS_COLORS） ──
@@ -152,13 +152,13 @@ class IntensityImageRenderer:
     @property
     def font_value(self) -> ImageFont.FreeTypeFont:
         if self._font_value is None:
-            self._font_value = _load_font(60)
+            self._font_value = _load_font(58)
         return self._font_value
 
     @property
     def font_label(self) -> ImageFont.FreeTypeFont:
         if self._font_label is None:
-            self._font_label = _load_font(26)
+            self._font_label = _load_font(20)
         return self._font_label
 
     def _cache_key(self, prefix: str, mag: float, depth: float) -> str:
@@ -170,7 +170,7 @@ class IntensityImageRenderer:
     def _render_single(
         self, cache_path: str, label: str, value: str, bg_color: tuple[int, int, int],
     ) -> str | None:
-        """渲染单张图：纯色背景 + 一行文本。"""
+        """渲染单张图：纯色背景 + 标签在上 数值在下。"""
         if os.path.exists(cache_path):
             return cache_path
 
@@ -178,16 +178,20 @@ class IntensityImageRenderer:
         draw = ImageDraw.Draw(img)
         txt_color = _text_color_for_bg(*bg_color)
 
-        # 左侧标签
-        draw.text((24, 0), label, fill=txt_color, font=self.font_label)
+        # 标签居中上方
+        lb = self.font_label.getbbox(label)
+        lw = lb[2] - lb[0]
+        lx = (IMAGE_WIDTH - lw) // 2
+        ly = 10
+        draw.text((lx, ly), label, fill=txt_color, font=self.font_label)
 
-        # 右侧数值（大号，略高于标签形成视觉层次）
-        bbox = self.font_value.getbbox(value)
-        tw = bbox[2] - bbox[0]
-        th = bbox[3] - bbox[1]
-        x = IMAGE_WIDTH - tw - 24
-        y = (IMAGE_HEIGHT - th) // 2 - 4  # 略微上移
-        draw.text((x, y), value, fill=txt_color, font=self.font_value)
+        # 数值居中下方（大字）
+        vb = self.font_value.getbbox(value)
+        vw = vb[2] - vb[0]
+        vh = vb[3] - vb[1]
+        vx = (IMAGE_WIDTH - vw) // 2
+        vy = IMAGE_HEIGHT - vh - 8
+        draw.text((vx, vy), value, fill=txt_color, font=self.font_value)
 
         img.save(cache_path, "PNG")
         logger.info(f"[IntensityImg] 已生成 → {os.path.basename(cache_path)}")
