@@ -23,7 +23,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 # ── 图片尺寸 ──
 IMAGE_WIDTH = 750
-IMAGE_HEIGHT = 240
+IMAGE_HEIGHT = 200
 
 # ── CSIS 12 级烈度配色（CAPQuakeQt CSIS_COLORS） ──
 CSIS_COLORS: list[tuple[int, int, int]] = [
@@ -183,10 +183,11 @@ class IntensityImageRenderer:
         ly = (IMAGE_HEIGHT - (lb[3] - lb[1])) // 2 - lb[1]
         draw.text((36, ly), label, fill=txt_color, font=self.font_label)
 
-        # 数值靠右垂直居中（大号）
+        # 数值靠右垂直居中，但往左挪一些（右留空让视觉平衡）
         vb = self.font_value.getbbox(value)
+        vw = vb[2] - vb[0]
         vy = (IMAGE_HEIGHT - (vb[3] - vb[1])) // 2 - vb[1]
-        draw.text((IMAGE_WIDTH - (vb[2] - vb[0]) - 36, vy), value, fill=txt_color, font=self.font_value)
+        draw.text((IMAGE_WIDTH - vw - 80, vy), value, fill=txt_color, font=self.font_value)
 
         img.save(cache_path, "PNG")
         logger.info(f"[IntensityImg] 已生成 → {os.path.basename(cache_path)}")
