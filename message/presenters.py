@@ -97,6 +97,10 @@ def _exclude_intensity_estimate(source_id: str) -> bool:
     """CWA / JMA 机构不显示预估烈度震度。"""
     return source_id.startswith("cwa_") or source_id.startswith("jma_")
 
+def _exclude_region_translation(source_id: str) -> bool:
+    """CENC / JMA / CWA 源不添加中文区划翻译（已有本地地名）。"""
+    return source_id.startswith("cenc_") or source_id.startswith("jma_") or source_id.startswith("cwa_")
+
 
 # ── 源机构信息（从 sources.json 加载） ──
 
@@ -295,6 +299,18 @@ def present_earthquake_report(event: EarthquakeReport) -> str:
     lines.append(_SEPARATOR)
     if event.place_name:
         lines.append(_field("震中", event.place_name))
+        # 非 CENC/JMA/CWA 源：在原文地名下一行加中文区划翻译
+        if not _exclude_region_translation(event.source_id) and event.latitude is not None and event.longitude is not None:
+            try:
+                from ..utils.region_service import translate_place_name
+                translated = translate_place_name(
+                    event.place_name, event.latitude, event.longitude,
+                    fallback_to_original=False,
+                )
+                if translated and translated != event.place_name:
+                    lines.append(_field("区划", translated))
+            except Exception:
+                pass
     if event.region:
         lines.append(_field("区域", event.region))
     if event.magnitude is not None:
