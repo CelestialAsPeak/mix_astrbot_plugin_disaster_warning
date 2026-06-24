@@ -280,6 +280,7 @@ class MixDisasterWarningPlugin(Star):
             session_sender = SessionSender(self.context)
             push_svc = PushExecutionService(
                 dict(self.config), session_sender, map_builder=self._map_builder,
+                snet_renderer=self._snet_renderer,
             )
             self._orchestrator = PushOrchestrator(dict(self.config), push_svc.execute_push, sender=session_sender)
 

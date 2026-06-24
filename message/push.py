@@ -55,10 +55,11 @@ class SessionSender:
 class PushExecutionService:
     """推送执行服务。"""
 
-    def __init__(self, config: dict, sender: SessionSender, map_builder=None):
+    def __init__(self, config: dict, sender: SessionSender, map_builder=None, snet_renderer=None):
         self.config = config
         self.sender = sender
         self.map_builder = map_builder
+        self.snet_renderer = snet_renderer
 
     async def _render_event_map(self, envelope: EventEnvelope) -> list[str] | None:
         """渲染震中地图（缩略图 + 细节图），返回 base64 列表。"""
@@ -112,6 +113,38 @@ class PushExecutionService:
 
         return b64_list if b64_list else None
 
+    async def _render_snet_map(self, envelope: EventEnvelope) -> list[str] | None:
+        """渲染 S-Net 测站分布图，返回 base64 列表。"""
+        if not self.snet_renderer:
+            return None
+        stations = None
+        ts_str = ""
+        if envelope.metadata:
+            stations = envelope.metadata.get("stations")
+        if not stations and isinstance(envelope.event, EarthquakeReport):
+            raw = envelope.event.raw if isinstance(envelope.event.raw, dict) else {}
+            stations = raw.get("stations")
+            ts_str = str(raw.get("timestamp", ""))
+        if not stations:
+            return None
+        try:
+            from datetime import datetime, timezone
+            ts_str = ts_str or datetime.now(timezone.utc).strftime("%Y%m%d%H%M00")
+            import tempfile, os, time as _time
+            img_path = os.path.join(tempfile.gettempdir(), f"snet_{ts_str}_{int(_time.time())}.png")
+            out = await self.snet_renderer.render(stations, img_path, ts_str)
+            if out and os.path.exists(out):
+                with open(out, "rb") as f:
+                    b64 = base64.b64encode(f.read()).decode()
+                try:
+                    os.unlink(out)
+                except Exception:
+                    pass
+                return [b64]
+        except Exception as e:
+            logger.error(f"[Push] S-Net 测站图渲染失败: {e}")
+        return None
+
     async def execute_push(
         self,
         envelope: EventEnvelope,
@@ -141,11 +174,19 @@ class PushExecutionService:
 
             # 构建消息链（文本 + 地图图片）
             chain_components = [Plain(text)]
-            # 地震震中图
-            map_b64_list = await self._render_event_map(envelope)
-            if map_b64_list:
-                for b64 in map_b64_list:
-                    chain_components.append(Image.fromBase64(b64))
+            # S-Net 专用测站分布图
+            is_snet = envelope.source_id in ("snet_http", "snet") and isinstance(envelope.event, EarthquakeReport)
+            if is_snet:
+                snet_b64 = await self._render_snet_map(envelope)
+                if snet_b64:
+                    for b64 in snet_b64:
+                        chain_components.append(Image.fromBase64(b64))
+            else:
+                # 地震震中图
+                map_b64_list = await self._render_event_map(envelope)
+                if map_b64_list:
+                    for b64 in map_b64_list:
+                        chain_components.append(Image.fromBase64(b64))
             # 台风路径图（由 _typhoon_push_adapter 预渲染后塞入 metadata）
             typhoon_img = envelope.metadata.get("_typhoon_image") if envelope.metadata else None
             if typhoon_img:
