@@ -4,7 +4,8 @@ message/render/intensity_image_renderer.py
 震度/烈度图片渲染器 — 使用 Pillow 生成带 CAPQuakeQt 配色的图片。
 缓存已生成的图片，避免重复渲染。
 
-图片尺寸: 600×120px（与震中地图同宽，高度约为其 30%）
+图片尺寸: 480×90px
+设计：以震度/烈度色为背景，一行文本：标签 + 大号数值
 """
 
 from __future__ import annotations
@@ -20,24 +21,11 @@ except ImportError:
 from PIL import Image, ImageDraw, ImageFont
 
 
-# ── CAPQuakeQt 暗色主题配色 ──
-
-# 卡片背景 (COLOR_CARD_BG)
-BG_COLOR = (25, 25, 35)
-# 主要文字 (COLOR_TEXT)
-LABEL_COLOR = (220, 225, 230)
-# 次要文字 (COLOR_TEXT_DIM)
-SUB_LABEL_COLOR = (100, 100, 110)
-
-# 左侧装饰色条宽度
-ACCENT_BAR_W = 6
-
-# 图片尺寸
-IMAGE_WIDTH = 600
-IMAGE_HEIGHT = 120
+# ── 图片尺寸 ──
+IMAGE_WIDTH = 480
+IMAGE_HEIGHT = 90
 
 # ── CSIS 12 级烈度配色（CAPQuakeQt CSIS_COLORS） ──
-# 索引 0~12 对应 0 / I~XII
 CSIS_COLORS: list[tuple[int, int, int]] = [
     (160, 160, 160),   # [0]  灰色
     (160, 160, 160),   # [1]  I 度  灰色
@@ -55,7 +43,6 @@ CSIS_COLORS: list[tuple[int, int, int]] = [
 ]
 
 # ── JMA 10 级震度配色（CAPQuakeQt JMA_COLORS） ──
-# 索引 0~9 对应震度 0~7 细分
 JMA_COLORS: list[tuple[int, int, int]] = [
     (160, 160, 160),   # [0] 震度0   灰色
     (217, 227, 240),   # [1] 震度1   微震
@@ -80,6 +67,9 @@ _ROMAN: list[str] = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"
 
 # 微软雅黑粗体路径
 _FONT_PATH = "C:/Windows/Fonts/msyhbd.ttc"
+
+# 缓存版本（改版时递增以丢弃旧缓存）
+_CACHE_VERSION = "v2"
 
 
 def _load_font(size: int) -> ImageFont.FreeTypeFont:
@@ -144,104 +134,84 @@ def _get_shindo_color(shindo_str: str) -> tuple[int, int, int]:
     return JMA_COLORS[idx]
 
 
+def _text_color_for_bg(r: int, g: int, b: int) -> tuple[int, int, int]:
+    """根据背景色亮度选择文字颜色（CAPQuakeQt text_color_for_bg 算法）。"""
+    lum = 0.299 * r + 0.587 * g + 0.114 * b
+    return (18, 18, 22) if lum > 140 else (220, 225, 230)
+
+
 class IntensityImageRenderer:
     """震度/烈度图片渲染器。"""
 
     def __init__(self, cache_dir: str):
         self.cache_dir = os.path.join(cache_dir, "intensity_cache")
         os.makedirs(self.cache_dir, exist_ok=True)
-        # 字体缓存（懒加载）
-        self._font_large: ImageFont.FreeTypeFont | None = None
+        self._font_value: ImageFont.FreeTypeFont | None = None
         self._font_label: ImageFont.FreeTypeFont | None = None
-        self._font_sub: ImageFont.FreeTypeFont | None = None
 
     @property
-    def font_large(self) -> ImageFont.FreeTypeFont:
-        if self._font_large is None:
-            self._font_large = _load_font(52)
-        return self._font_large
+    def font_value(self) -> ImageFont.FreeTypeFont:
+        if self._font_value is None:
+            self._font_value = _load_font(60)
+        return self._font_value
 
     @property
     def font_label(self) -> ImageFont.FreeTypeFont:
         if self._font_label is None:
-            self._font_label = _load_font(22)
+            self._font_label = _load_font(26)
         return self._font_label
 
-    @property
-    def font_sub(self) -> ImageFont.FreeTypeFont:
-        if self._font_sub is None:
-            self._font_sub = _load_font(16)
-        return self._font_sub
-
     def _cache_key(self, prefix: str, mag: float, depth: float) -> str:
-        """生成缓存文件名（基于震级+深度，相同值不重复生成）。"""
-        return os.path.join(self.cache_dir, f"{prefix}_m{mag:.1f}_d{depth:.0f}.png")
+        """生成缓存文件名。"""
+        return os.path.join(
+            self.cache_dir, f"{prefix}_{_CACHE_VERSION}_m{mag:.1f}_d{depth:.0f}.png"
+        )
 
-    def _draw_base(self, accent_color: tuple[int, int, int]) -> tuple[Image.Image, ImageDraw.ImageDraw]:
-        """创建基础画布 + 左侧色条。"""
-        img = Image.new("RGB", (IMAGE_WIDTH, IMAGE_HEIGHT), BG_COLOR)
-        draw = ImageDraw.Draw(img)
-        # 左侧装饰条
-        draw.rectangle([0, 0, ACCENT_BAR_W - 1, IMAGE_HEIGHT - 1], fill=accent_color)
-        return img, draw
-
-    def render_shindo(self, mag: float, depth: float = 10.0) -> str | None:
-        """渲染震度图片，返回文件路径（缓存命中直接返回）。"""
-        csis = _estimate_csis(mag, depth)
-        shindo_str = _csis_to_shindo(csis)
-        cache_path = self._cache_key("shindo", mag, depth)
+    def _render_single(
+        self, cache_path: str, label: str, value: str, bg_color: tuple[int, int, int],
+    ) -> str | None:
+        """渲染单张图：纯色背景 + 一行文本。"""
         if os.path.exists(cache_path):
             return cache_path
 
-        color = _get_shindo_color(shindo_str)
-        img, draw = self._draw_base(color)
+        img = Image.new("RGB", (IMAGE_WIDTH, IMAGE_HEIGHT), bg_color)
+        draw = ImageDraw.Draw(img)
+        txt_color = _text_color_for_bg(*bg_color)
 
         # 左侧标签
-        draw.text((22, 14), "预估最大震度", fill=LABEL_COLOR, font=self.font_label)
-        draw.text((22, 42), "(推定)", fill=SUB_LABEL_COLOR, font=self.font_sub)
+        draw.text((24, 0), label, fill=txt_color, font=self.font_label)
 
-        # 右侧震度值（大号大字）
-        bbox = self.font_large.getbbox(shindo_str)
+        # 右侧数值（大号，略高于标签形成视觉层次）
+        bbox = self.font_value.getbbox(value)
         tw = bbox[2] - bbox[0]
         th = bbox[3] - bbox[1]
         x = IMAGE_WIDTH - tw - 24
-        y = (IMAGE_HEIGHT - th) // 2
-        draw.text((x, y), shindo_str, fill=color, font=self.font_large)
+        y = (IMAGE_HEIGHT - th) // 2 - 4  # 略微上移
+        draw.text((x, y), value, fill=txt_color, font=self.font_value)
 
         img.save(cache_path, "PNG")
-        logger.info(f"[IntensityImg] 震度图已生成 → {cache_path}")
+        logger.info(f"[IntensityImg] 已生成 → {os.path.basename(cache_path)}")
         return cache_path
 
-    def render_intensity(self, mag: float, depth: float = 10.0) -> str | None:
-        """渲染烈度图片（罗马数字），返回文件路径（缓存命中直接返回）。"""
+    def render_shindo(self, mag: float, depth: float = 10.0) -> str | None:
+        """渲染震度图片。"""
         csis = _estimate_csis(mag, depth)
-        cache_path = self._cache_key("intensity", mag, depth)
-        if os.path.exists(cache_path):
-            return cache_path
+        shindo_str = _csis_to_shindo(csis)
+        color = _get_shindo_color(shindo_str)
+        cache_path = self._cache_key("shindo", mag, depth)
+        return self._render_single(cache_path, "预估最大震度", shindo_str, color)
 
+    def render_intensity(self, mag: float, depth: float = 10.0) -> str | None:
+        """渲染烈度图片（罗马数字）。"""
+        csis = _estimate_csis(mag, depth)
         val = max(1, min(12, int(round(csis))))
         roman = _ROMAN[val - 1]
         color = _get_csis_color(csis)
-        img, draw = self._draw_base(color)
-
-        # 左侧标签
-        draw.text((22, 14), "预估最大烈度", fill=LABEL_COLOR, font=self.font_label)
-        draw.text((22, 42), "(推定)", fill=SUB_LABEL_COLOR, font=self.font_sub)
-
-        # 右侧烈度值（大号大字）
-        bbox = self.font_large.getbbox(roman)
-        tw = bbox[2] - bbox[0]
-        th = bbox[3] - bbox[1]
-        x = IMAGE_WIDTH - tw - 24
-        y = (IMAGE_HEIGHT - th) // 2
-        draw.text((x, y), roman, fill=color, font=self.font_large)
-
-        img.save(cache_path, "PNG")
-        logger.info(f"[IntensityImg] 烈度图已生成 → {cache_path}")
-        return cache_path
+        cache_path = self._cache_key("intensity", mag, depth)
+        return self._render_single(cache_path, "预估最大烈度", roman, color)
 
     def render_both(self, mag: float, depth: float = 10.0) -> tuple[str | None, str | None]:
-        """渲染震度+烈度两张图，返回 (shindo_path, intensity_path)。"""
+        """渲染震度+烈度两张图。"""
         try:
             s = self.render_shindo(mag, depth)
             i = self.render_intensity(mag, depth)
