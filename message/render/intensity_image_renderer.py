@@ -152,7 +152,7 @@ class IntensityImageRenderer:
     @property
     def font_value(self) -> ImageFont.FreeTypeFont:
         if self._font_value is None:
-            self._font_value = _load_font(58)
+            self._font_value = _load_font(48)
         return self._font_value
 
     @property
@@ -170,7 +170,7 @@ class IntensityImageRenderer:
     def _render_single(
         self, cache_path: str, label: str, value: str, bg_color: tuple[int, int, int],
     ) -> str | None:
-        """渲染单张图：纯色背景 + 标签在上 数值在下。"""
+        """渲染单张图：纯色背景 + 一行标签 大号数值靠右。"""
         if os.path.exists(cache_path):
             return cache_path
 
@@ -178,20 +178,16 @@ class IntensityImageRenderer:
         draw = ImageDraw.Draw(img)
         txt_color = _text_color_for_bg(*bg_color)
 
-        # 标签居中上方
+        # 标签靠左垂直居中
         lb = self.font_label.getbbox(label)
-        lw = lb[2] - lb[0]
-        lx = (IMAGE_WIDTH - lw) // 2
-        ly = 10
-        draw.text((lx, ly), label, fill=txt_color, font=self.font_label)
+        lh = lb[3] - lb[1]
+        draw.text((14, (IMAGE_HEIGHT - lh) // 2), label, fill=txt_color, font=self.font_label)
 
-        # 数值居中下方（大字）
+        # 数值靠右垂直居中（大号，和标签隔约 10px）
         vb = self.font_value.getbbox(value)
         vw = vb[2] - vb[0]
         vh = vb[3] - vb[1]
-        vx = (IMAGE_WIDTH - vw) // 2
-        vy = IMAGE_HEIGHT - vh - 8
-        draw.text((vx, vy), value, fill=txt_color, font=self.font_value)
+        draw.text((IMAGE_WIDTH - vw - 14, (IMAGE_HEIGHT - vh) // 2), value, fill=txt_color, font=self.font_value)
 
         img.save(cache_path, "PNG")
         logger.info(f"[IntensityImg] 已生成 → {os.path.basename(cache_path)}")
