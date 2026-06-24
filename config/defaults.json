@@ -85,8 +85,9 @@
     },
     "global_quake_filter": {
       "enabled": true,
-      "min_magnitude": 4.5,
-      "最小烈度": 5.0
+      "min_magnitude": 5.5,
+      "最小烈度": 5.0,
+      "gq_place_whitelist": "中国,日本,台湾,菲律宾,印尼,印度尼西亚,新西兰"
     },
     "emsc_filter": {
       "enabled": true,

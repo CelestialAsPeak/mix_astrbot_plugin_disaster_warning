@@ -77,8 +77,16 @@ class GlobalQuakeParser(BaseParser):
 
         # 烈度（protobuf 中是 intensity 字段，罗马数字如 "VII"）
         intensity_raw = str(eq.intensity or "")
-        # 地点名
+        # 地点名（尝试翻译为中文）
         place_name = str(eq.region or "")
+        if eq.latitude and eq.longitude:
+            try:
+                from ..utils.region_service import translate_place_name
+                translated = translate_place_name(place_name, eq.latitude, eq.longitude)
+                if translated:
+                    place_name = translated
+            except Exception:
+                pass
 
         # 台站统计
         stations = {}
@@ -121,6 +129,9 @@ class GlobalQuakeParser(BaseParser):
                 "id": eq.id,
                 "revision_id": eq.revision_id,
                 "region": eq.region,
+                "stations_used": stations.get("used") if stations else None,
+                "stations_total": stations.get("total") if stations else None,
+                "max_pga": eq.max_pga if eq.max_pga else None,
             },
         )
 

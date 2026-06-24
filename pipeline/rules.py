@@ -241,6 +241,19 @@ class EarthquakeThresholdRule(BaseRule):
                 min_mag = direct_cfg["min_magnitude"]
             else:
                 min_mag = f.get("min_magnitude", 4.5)
+
+            # GlobalQuake 地名白名单：中文地名包含关键词则直接推送
+            if source_id == "global_quake":
+                whitelist_str = f.get("gq_place_whitelist", "")
+                if whitelist_str:
+                    place = (ctx.event.place_name or "").strip()
+                    if place:
+                        keywords = [w.strip() for w in whitelist_str.split(",") if w.strip()]
+                        for kw in keywords:
+                            if kw in place:
+                                logger.info(f"[GQ] 白名单命中「{kw}」→ {place}，跳过阈值检查")
+                                return RuleDecision.accept(rule_name=self.name)
+
             # JMA/CWA 震度过滤器：min_magnitude OR min_shindo
             if filter_key in ("jma_scale_filter", "cwa_scale_filter"):
                 if isinstance(direct_cfg, dict) and "min_shindo" in direct_cfg:

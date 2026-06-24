@@ -152,7 +152,7 @@ class PushExecutionService:
             return None
         try:
             msg_fmt = self.config.get("message_format", {})
-            template_name = msg_fmt.get("global_quake_template", "Aurora")
+            template_name = msg_fmt.get("global_quake_template", "DarkNight")
             return await self.gq_card_builder.build(
                 envelope,
                 template_name=template_name,

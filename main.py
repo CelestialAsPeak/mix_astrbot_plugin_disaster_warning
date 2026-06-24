@@ -275,6 +275,15 @@ class MixDisasterWarningPlugin(Star):
             )
             logger.info("[Mix] GQ 卡片构建器就绪")
 
+            # 区域名称翻译服务（用于 GQ 等地名中文化）
+            from .utils.region_service import init_region_service
+            _fe_path = Path(self._plugin_root) / "resources" / "fe_regions_data.json"
+            if _fe_path.exists():
+                init_region_service(str(_fe_path))
+                logger.info("[Mix] 区域翻译服务就绪")
+            else:
+                logger.warning("[Mix] fe_regions_data.json 不存在，区域翻译不可用")
+
             # 台风管理器
             self._typhoon_manager = TyphoonManager(
                 db=self.database,

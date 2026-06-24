@@ -252,14 +252,22 @@ def present_eew(event: EewEvent) -> str:
     if coords:
         lines.append(_field("经纬度", coords))
     if event.max_intensity:
-        intensity_icons = {">7": "🟣", "7": "🔴", "6": "🟠", "5": "🟡", "4": "🟢", "3": "🔵", "2": "⚪", "1": "⚪"}
-        icon = intensity_icons.get(str(event.max_intensity).split(".")[0], "")
-        lines.append(_field("最大烈度", f"{event.max_intensity} {icon}".strip()))
+        lines.append(_field("最大烈度", event.max_intensity))
     # 预估烈度/震度（CWA/JMA 除外）
     if not _exclude_intensity_estimate(event.source_id) and event.magnitude is not None and event.depth is not None:
         csis = _estimate_csis(event.magnitude, event.depth)
         lines.append(_field("预估最大烈度", _format_intensity(csis)))
         lines.append(_field("预估最大震度", _csis_to_shindo(csis)))
+    # GQ 特有数据
+    raw = event.raw if isinstance(event.raw, dict) else {}
+    su = raw.get("stations_used")
+    st = raw.get("stations_total")
+    if su is not None:
+        sta_text = f"{int(su)}" + (f"/{int(st)}" if st else "")
+        lines.append(_field("参与测站数", sta_text))
+    pga = raw.get("max_pga")
+    if pga is not None:
+        lines.append(_field("最大加速度", f"{pga:.1f} gal"))
     lines.append(_SEPARATOR)
     return "\n".join(lines)
 
