@@ -70,6 +70,7 @@ class CEAEEWParser(BaseParser):
             magnitude=to_float(data.get("magnitude")),
             place_name=str(data.get("placeName", "") or ""),
             max_intensity=str(data.get("epiIntensity", "") or ""),
+            province=str(data.get("province", "") or ""),
             serial=report_num,
             is_final=is_final,
             report_num=report_num,

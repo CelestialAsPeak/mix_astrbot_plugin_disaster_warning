@@ -5,6 +5,7 @@ message/presenters.py — 消息展示格式器。
 """
 
 import json
+import math
 import os
 import re
 from datetime import datetime
@@ -43,6 +44,60 @@ LEVEL_COLORS: dict[str, str] = {
 }
 
 
+# ── 烈度/震度预估（CAPQuakeQt CSIS 公式） ──
+
+_CSIS_ROMAN = ["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"]
+
+def _estimate_csis(mag: float, depth_km: float) -> float:
+    """估算震中 CSIS（烈度），基于 CAPQuakeQt business/core/intensity.py。"""
+    R = 6371.0
+    fault_len = 10 ** ((mag - 3.821) / 1.86)
+    # 震中处 distance_km=0 → theta=0 → line_dis=depth
+    line_dis = depth_km
+    hypo_dis = max(
+        line_dis - 10.0 - fault_len,
+        0.0 - fault_len,
+        0.2 * (line_dis - 10.0),
+        0.0
+    )
+    cea1 = 1.297 * mag - 4.368 * math.log10(0.0 + 15.0) + 5.363
+    cea2 = 1.297 * mag - 4.368 * math.log10(hypo_dis + 15.0) + 5.363
+    return (cea1 + cea2) / 2.0
+
+def _csis_to_shindo(csis: float) -> str:
+    """CSIS(MMI) → JMA 震度，基于 烈度&震度计算器v2.5 公式：Shindo = MMI × 0.633 - 0.05"""
+    s = csis * 0.633 - 0.05
+    if s >= 7.0:
+        return "7"
+    if s >= 6.5:
+        return "6+"
+    if s >= 5.5:
+        return "6-"
+    if s >= 5.0:
+        return "5+"
+    if s >= 4.5:
+        return "5-"
+    if s >= 3.5:
+        return "4"
+    if s >= 2.5:
+        return "3"
+    if s >= 1.5:
+        return "2"
+    if s >= 0.5:
+        return "1"
+    return "0"
+
+def _format_intensity(csis: float) -> str:
+    """格式化烈度显示：'7.0 [VII]'"""
+    val = max(1, min(12, int(round(csis))))
+    roman = _CSIS_ROMAN[val] if val < len(_CSIS_ROMAN) else "XII"
+    return f"{csis:.1f} [{roman}]"
+
+def _exclude_intensity_estimate(source_id: str) -> bool:
+    """CWA / JMA 机构不显示预估烈度震度。"""
+    return source_id.startswith("cwa_") or source_id.startswith("jma_")
+
+
 # ── 源机构信息（从 sources.json 加载） ──
 
 _SOURCE_DISPLAY_INFO: dict[str, dict] = {}
@@ -55,11 +110,12 @@ try:
             if _sid.startswith("_"):
                 continue
             _dn = _entry.get("display_name", "") or ""
-            # CODE: 始终用 institution_key（比 display_name 的 (CODE) 更可靠）
+            # CODE: code_override 优先，其次 institution_key.upper()
+            _co = _entry.get("code_override", "") or ""
             _ik = _entry.get("institution_key", "") or ""
-            _code = _ik.upper() if _ik else ""
+            _code = _co if _co else (_ik.upper() if _ik else "")
             # NAME: 去掉 display_name 末尾 (CODE) 后缀（如有）
-            _m = re.search(r"\(([A-Z0-9+/]+)\)$", _dn)
+            _m = re.search(r"\(([A-Za-z0-9/+-]+)\)$", _dn)
             _name = _dn[:_m.start()].strip() if _m else _dn
             _SOURCE_DISPLAY_INFO[_sid] = {"code": _code, "name": _name}
 except Exception:
@@ -71,19 +127,29 @@ except Exception:
 # 不在此表中的源 fallback 到调用时传入的通用标签
 
 _EVENT_LABELS: dict[str, str] = {
+    # EEW 源
     "cea_fanstudio": "地震预警",
-    "cwa_fanstudio": "强震即时预警",
+    "cea_pr_fanstudio": "地震预警",
+    "cwa_fanstudio": "強震即時警報",
+    "cwa_wolfx": "強震即時警報",
     "jma_fanstudio": "緊急地震速報",
-    "sa_fanstudio": "ShakeAlert",
-    "kma_eew_fanstudio": "EEW",
-    "global_quake": "GlobalQuake",
-    "cea_pr_fanstudio": "地震预警(省)",
-    "cenc_wolfx": "EEW",
-    "cwa_wolfx": "EEW",
     "jma_wolfx": "緊急地震速報",
-    "sc_wolfx_eew": "EEW",
-    "fj_wolfx_eew": "EEW",
-    "cq_wolfx_eew": "EEW",
+    "jma_p2p": "緊急地震速報",
+    "sa_fanstudio": "地震预警",
+    "kma_eew_fanstudio": "地震预警",
+    "sc_wolfx_eew": "地震预警",
+    "fj_wolfx_eew": "地震预警",
+    "cq_wolfx_eew": "地震预警",
+    "global_quake": "地震预警",
+    # 地震报告源
+    "cwa_report_fanstudio": "地震資訊",
+    "jma_p2p_info": "震源・震度情報",
+    "jma_wolfx_info": "震源・震度情報",
+    "beijing_fanstudio": "正式测定",
+    "guangxi_fanstudio": "正式测定",
+    "ningxia_fanstudio": "正式测定",
+    "shanxi_fanstudio": "正式测定",
+    "yunnan_fanstudio": "正式测定",
 }
 
 
@@ -93,38 +159,40 @@ def _get_event_label(source_id: str, fallback: str) -> str:
 
 # 旧的 _SOURCE_NAMES 保留供 _SOURCE_DISPLAY_INFO 没加载到时的兜底
 _SOURCE_NAMES: dict[str, str] = {
-    "cea_fanstudio": "中国地震预警网", "cenc_fanstudio": "中国地震台网",
-    "jma_fanstudio": "日本气象厅", "cwa_fanstudio": "台湾气象署",
+    "cea_fanstudio": "CEA", "cenc_fanstudio": "CENC",
+    "jma_fanstudio": "JMA", "cwa_fanstudio": "CWA",
     "usgs_fanstudio": "USGS", "emsc_fanstudio": "EMSC",
     "hko_fanstudio": "HKO", "gfz_fanstudio": "GFZ",
     "usp_fanstudio": "USP", "bcsf_fanstudio": "BCSF",
     "fssn_fanstudio": "FSSN", "kma_fanstudio": "KMA",
-    "sa_fanstudio": "ShakeAlert", "kma_eew_fanstudio": "KMA EEW",
+    "sa_fanstudio": "ShakeAlert", "kma_eew_fanstudio": "KMA",
     "global_quake": "GlobalQuake",
     "funvisis_http": "FUNVISIS", "cenais_http": "CENAIS",
     "csnc_http": "CSNC", "phivolcs_http": "PHIVOLCS",
     "tmd_http": "TMD", "geonet_http": "GeoNet",
     "nrcan_http": "NRCan", "usgs_weekly": "USGS周报",
     "snet_http": "S-net", "icl_http": "ICL",
-    "beijing_fanstudio": "北京", "guangxi_fanstudio": "广西",
-    "ningxia_fanstudio": "宁夏", "shanxi_fanstudio": "山西",
-    "yunnan_fanstudio": "云南",
-    "cenc_wolfx": "CENC(Wolfx)", "cwa_wolfx": "CWA(Wolfx)",
+    "cenc_wolfx": "CENC", "cwa_wolfx": "CWA",
+    "jma_wolfx": "JMA", "jma_p2p": "JMA",
+    "jma_p2p_info": "JMA情报", "jma_wolfx_info": "JMA情报",
+    "sc_wolfx_eew": "SC", "fj_wolfx_eew": "FJ", "cq_wolfx_eew": "CQ",
+    "beijing_fanstudio": "BJ", "guangxi_fanstudio": "GX",
+    "ningxia_fanstudio": "NX", "shanxi_fanstudio": "SX", "yunnan_fanstudio": "YN",
     "china_tsunami_fanstudio": "海啸预警",
     "snet": "S-net",
-    "cma_typhoon": "CMA台风", "jma_typhoon": "JMA台风",
-    "jma_wolfx": "JMA(Wolfx)", "jma_wolfx_info": "JMA情报(Wolfx)",
-    "sc_wolfx_eew": "四川", "fj_wolfx_eew": "福建", "cq_wolfx_eew": "重庆",
+    "cma_typhoon": "CMA", "jma_typhoon": "JMA",
 }
 
 
-def _make_source_title(source_id: str, event_label: str) -> str:
-    """生成标题：[CODE/机构名 事件标签] 或 [机构名 事件标签]"""
+def _make_source_title(source_id: str, event_label: str, name_suffix: str = "") -> str:
+    """生成标题：[CODE/机构名 事件标签] 或 [CODE 事件标签] 或 [机构名 事件标签]"""
     info = _SOURCE_DISPLAY_INFO.get(source_id)
     code = info["code"] if info else ""
-    name = info["name"] if info else ""
+    name = (info["name"] if info else "") + name_suffix
     if code and name:
         return f"[{code}/{name} {event_label}]"
+    if code:
+        return f"[{code} {event_label}]"
     if name:
         return f"[{name} {event_label}]"
     # 兜底：用 _SOURCE_NAMES 的短名
@@ -142,7 +210,7 @@ def _field(label: str, value: object) -> str:
     pad = _FIELD_WIDTH * 2 - w
     if pad < 0:
         pad = 0
-    return f"{label}{'　' * (pad // 2)}{' ' * (pad % 2)}| {value}"
+    return f"{label}{'　' * (pad // 2)}{' ' * (pad % 2)} | {value}"
 
 
 def _make_title(text: str) -> str:
@@ -158,6 +226,10 @@ def _format_coords(lat: float | None, lon: float | None) -> str:
 def present_eew(event: EewEvent) -> str:
     """格式化 EEW 预警消息。"""
     label = _get_event_label(event.source_id, "EEW")
+    # CEA 省级融合源：追加省份名
+    name_suffix = ""
+    if event.source_id == "cea_pr_fanstudio" and getattr(event, "province", None):
+        name_suffix = f"({event.province})"
     parts = []
     if event.report_num:
         parts.append(f"第{event.report_num}报")
@@ -165,7 +237,7 @@ def present_eew(event: EewEvent) -> str:
         parts.append("最终报")
     report_tag = " ".join(parts)
     title_label = f"{label}-{report_tag}" if report_tag else label
-    title = _make_source_title(event.source_id, title_label)
+    title = _make_source_title(event.source_id, title_label, name_suffix)
     lines = [title]
     lines.append(_SEPARATOR)
     if event.place_name:
@@ -175,7 +247,7 @@ def present_eew(event: EewEvent) -> str:
     if event.depth is not None:
         lines.append(_field("深度", f"{event.depth:.0f} km"))
     if event.occurred_at:
-        lines.append(_field("发震时间", event.occurred_at.strftime("%Y-%m-%d %H:%M:%S")))
+        lines.append(_field("发震时间", event.occurred_at.strftime("%Y年%m月%d日%H:%M:%S")))
     coords = _format_coords(event.latitude, event.longitude)
     if coords:
         lines.append(_field("经纬度", coords))
@@ -183,19 +255,34 @@ def present_eew(event: EewEvent) -> str:
         intensity_icons = {">7": "🟣", "7": "🔴", "6": "🟠", "5": "🟡", "4": "🟢", "3": "🔵", "2": "⚪", "1": "⚪"}
         icon = intensity_icons.get(str(event.max_intensity).split(".")[0], "")
         lines.append(_field("最大烈度", f"{event.max_intensity} {icon}".strip()))
+    # 预估烈度/震度（CWA/JMA 除外）
+    if not _exclude_intensity_estimate(event.source_id) and event.magnitude is not None and event.depth is not None:
+        csis = _estimate_csis(event.magnitude, event.depth)
+        lines.append(_field("预估最大烈度", _format_intensity(csis)))
+        lines.append(_field("预估最大震度", _csis_to_shindo(csis)))
     lines.append(_SEPARATOR)
     return "\n".join(lines)
 
 
 def present_earthquake_report(event: EarthquakeReport) -> str:
     """格式化地震报告消息。"""
+    # 自定义源标签（如 jma_p2p_info→"震源・震度情報"、省级→"正式测定"）
+    custom_label = _get_event_label(event.source_id, "")
+    if custom_label:
+        base_label = custom_label
+    # CENC: 从 raw 提取 infoTypeName（自动测定/正式测定）
+    elif event.source_id == "cenc_fanstudio":
+        info_type = str(event.raw.get("infoTypeName", event.raw.get("info_type", "")) or "")
+        base_label = info_type if info_type in ("自动测定", "正式测定") else "地震报告"
+    else:
+        base_label = "地震报告"
     parts = []
     if event.report_num:
         parts.append(f"第{event.report_num}报")
     if event.is_final:
         parts.append("最终报")
     report_tag = " ".join(parts)
-    title_label = f"地震报告-{report_tag}" if report_tag else "地震报告"
+    title_label = f"{base_label}-{report_tag}" if report_tag else base_label
     lines = [_make_source_title(event.source_id, title_label)]
     lines.append(_SEPARATOR)
     if event.place_name:
@@ -208,11 +295,15 @@ def present_earthquake_report(event: EarthquakeReport) -> str:
         d_text = "极浅" if event.depth == 0.0 else f"{event.depth:.0f} km"
         lines.append(_field("深度", d_text))
     if event.occurred_at:
-        lines.append(_field("发震时间", event.occurred_at.strftime("%Y-%m-%d %H:%M:%S")))
+        lines.append(_field("发震时间", event.occurred_at.strftime("%Y年%m月%d日%H:%M:%S")))
     coords = _format_coords(event.latitude, event.longitude)
     if coords:
         lines.append(_field("经纬度", coords))
-    lines.append(_field("事件ID", event.event_id))
+    # 预估烈度/震度（CWA/JMA 除外）
+    if not _exclude_intensity_estimate(event.source_id) and event.magnitude is not None and event.depth is not None:
+        csis = _estimate_csis(event.magnitude, event.depth)
+        lines.append(_field("预估最大烈度", _format_intensity(csis)))
+        lines.append(_field("预估最大震度", _csis_to_shindo(csis)))
     if event.url:
         lines.append(_field("详情", event.url))
     lines.append(_SEPARATOR)

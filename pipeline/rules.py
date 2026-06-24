@@ -14,6 +14,7 @@ pipeline/rules.py — 8 个推送过滤规则。
 
 from __future__ import annotations
 
+import math
 from datetime import datetime, timezone, timedelta
 
 try:
@@ -306,12 +307,38 @@ class EarthquakeThresholdRule(BaseRule):
         return default
 
     @staticmethod
-    def _get_intensity(ctx):
+    def _estimate_csis(mag: float, depth: float) -> float:
+        """基于 CAPQuakeQt CSIS 公式估算震中烈度。"""
+        R = 6371.0
+        fault_len = 10 ** ((mag - 3.821) / 1.86)
+        hypo_dis = max(
+            depth - 10.0 - fault_len,
+            0.0 - fault_len,
+            0.2 * (depth - 10.0),
+            0.0
+        )
+        cea1 = 1.297 * mag - 4.368 * math.log10(15.0) + 5.363
+        cea2 = 1.297 * mag - 4.368 * math.log10(hypo_dis + 15.0) + 5.363
+        return (cea1 + cea2) / 2.0
+
+    @staticmethod
+    def _get_intensity(ctx, use_estimate=True):
         if isinstance(ctx.event, EewEvent):
             try:
                 return float(ctx.event.max_intensity)
             except (TypeError, ValueError):
                 pass
+        # 没有实测烈度时，用 CSIS 公式估算（CWA/JMA 除外）
+        if use_estimate:
+            mag = getattr(ctx.event, "magnitude", None)
+            depth = getattr(ctx.event, "depth", None)
+            if mag is not None and depth is not None:
+                sid = ctx.source_id
+                if not sid.startswith("cwa_") and not sid.startswith("jma_"):
+                    try:
+                        return EarthquakeThresholdRule._estimate_csis(mag, depth)
+                    except Exception:
+                        pass
         return None
 
 

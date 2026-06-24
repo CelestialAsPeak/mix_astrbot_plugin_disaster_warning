@@ -360,10 +360,13 @@ class TyphoonManager:
 
     def _parse_cma_detail(self, xml_text: str) -> dict | None:
         """解析 {code}.xml → dict(name_cn, name_en, code, track_points)"""
+        if not xml_text or len(xml_text) < 50:
+            logger.warning(f"[CMA台风] 详情XML内容过短: {len(xml_text)} 字节, 前80字={xml_text[:80]}")
+            return None
         try:
             root = ET.fromstring(xml_text)
         except ET.ParseError as e:
-            logger.error(f"[CMA台风] 详情XML解析失败: {e}")
+            logger.error(f"[CMA台风] 详情XML解析失败: {e} | 前200字={xml_text[:200]}")
             return None
 
         title = root.get("title", "")

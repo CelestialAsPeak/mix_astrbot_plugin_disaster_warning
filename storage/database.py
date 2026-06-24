@@ -278,7 +278,7 @@ class DatabaseManager:
             await cursor.execute("""
                 SELECT real_event_id, source, type, magnitude, place_name,
                        time, depth, latitude, longitude, description,
-                       report_num, level
+                       report_num, level, raw_json, subtitle
                 FROM events
                 WHERE source=? AND type IN ('earthquake','earthquake_info')
                   AND magnitude IS NOT NULL
@@ -298,9 +298,9 @@ class DatabaseManager:
             cursor = await self.conn.cursor()
             await cursor.execute("""
                 SELECT real_event_id, source, type, magnitude, place_name,
-                       time, depth, report_num, description
+                       time, depth, report_num, description, raw_json
                 FROM events
-                WHERE source=? AND type='earthquake_warning'
+                WHERE source=? AND type IN ('earthquake_warning', 'eew')
                 ORDER BY id DESC LIMIT ?
             """, (source_id, limit))
             return [dict(r) for r in await cursor.fetchall()]

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 
 try:
@@ -59,57 +60,182 @@ class HttpJsonReportParser(BaseParser):
 
 
 # ── FUNVISIS (委内瑞拉) ──
+#
+# 实际 JSON 格式: 非标准 GeoJSON FeatureCollection
+#   features[].properties:
+#     phone → 震级
+#     phoneFormatted → 深度 (带 "km" 后缀)
+#     address → 位置描述
+#     city → 时间 (HH:MM)
+#     postalCode → 日期 (DD-MM-YYYY)
+#   features[].geometry.coordinates → [lon, lat]
+
 
 @ParserRegistry.register("funvisis_http")
-class FunvisisParser(HttpJsonReportParser):
-    """委内瑞拉地震研究基金会 (JSON)."""
+class FunvisisParser(BaseParser):
+    """委内瑞拉地震研究基金会 (非标准 GeoJSON)."""
 
-    def _parse_one(self, data: dict) -> EventEnvelope | None:
-        event_id = to_str(data.get("id")) or ""
-        if not event_id:
+    VET_TZ = timezone(timedelta(hours=-4))
+
+    def parse(self, raw: any) -> list[EventEnvelope] | None:
+        if not isinstance(raw, dict):
             return None
+        features = raw.get("features", [])
+        if not isinstance(features, list) or not features:
+            return None
+        results = []
+        for feat in features:
+            env = self._parse_feature(feat)
+            if env:
+                results.append(env)
+        return results if results else None
+
+    def _parse_feature(self, feat: dict) -> EventEnvelope | None:
+        props = feat.get("properties", {}) or {}
+        if not isinstance(props, dict):
+            return None
+
+        magnitude = to_float(props.get("phone"))
+        if magnitude is None:
+            return None
+
+        depth_str = str(props.get("phoneFormatted", "") or "")
+        depth = to_float(depth_str.replace("km", "").strip())
+
+        # 坐标: 优先 properties 中的 lat/long, 兜底 geometry.coordinates
+        latitude = to_float(props.get("lat"))
+        longitude = to_float(props.get("long"))
+        if latitude is None or longitude is None:
+            geom = feat.get("geometry", {}) or {}
+            coords = geom.get("coordinates", [])
+            if isinstance(coords, (list, tuple)) and len(coords) >= 2:
+                longitude = to_float(coords[0])
+                latitude = to_float(coords[1])
+        if latitude is None or longitude is None:
+            return None
+
+        place_name = str(props.get("address", "") or "") or None
+
+        # 时间: date=DD-MM-YYYY (postalCode), time=HH:MM (city)
+        date_str = str(props.get("postalCode", "") or "")
+        time_str = str(props.get("city", "") or "")
+        occurred_at = self._parse_datetime(date_str, time_str)
+
+        event_id = f"{date_str}_{time_str}_{latitude}_{longitude}".replace(" ", "_").replace(".", "_")
+
         event = EarthquakeReport(
             source_id=self.source_id,
             event_id=event_id,
-            occurred_at=parse_ts(data.get("time", data.get("datetime", ""))),
-            latitude=to_float(data.get("lat", data.get("latitude"))),
-            longitude=to_float(data.get("lon", data.get("longitude"))),
-            depth=to_float(data.get("depth")),
-            magnitude=to_float(data.get("mag", data.get("magnitude"))),
-            place_name=str(data.get("place", data.get("location", "")) or ""),
-            raw=data,
+            occurred_at=occurred_at,
+            latitude=latitude,
+            longitude=longitude,
+            depth=depth,
+            magnitude=magnitude,
+            place_name=place_name,
+            raw=feat,
         )
         return EventEnvelope(
             identity=EventIdentity(event_id=event_id, source_id=self.source_id, event_type="earthquake"),
             event=event,
         )
+
+    @staticmethod
+    def _parse_datetime(date_str: str, time_str: str) -> datetime | None:
+        """解析日期时间。date_str: DD-MM-YYYY, time_str: HH:MM (VET, UTC-4)"""
+        if not date_str or not time_str:
+            return None
+        try:
+            parts = date_str.split("-")
+            if len(parts) != 3:
+                return None
+            day, month, year = int(parts[0]), int(parts[1]), int(parts[2])
+            time_parts = time_str.split(":")
+            if len(time_parts) != 2:
+                return None
+            hour, minute = int(time_parts[0]), int(time_parts[1])
+            dt = datetime(year, month, day, hour, minute, tzinfo=FunvisisParser.VET_TZ)
+            return dt.astimezone(timezone.utc)
+        except (ValueError, TypeError):
+            return None
 
 
 # ── CENAIS (古巴) ──
+#
+# 实际 JSON 格式: JSON 数组
+#   每条记录:
+#     tiempoutc: UTC时间 (格式 "2026/06/06T22:55:16")
+#     latitud: 纬度
+#     longitud: 经度
+#     profundidad: 深度 (km)
+#     magnitud: 震级
+#     nombre: 地名
+#     provincia: 省份
+
 
 @ParserRegistry.register("cenais_http")
-class CenaisParser(HttpJsonReportParser):
-    """古巴国家地震局 (JSON)."""
+class CenaisParser(BaseParser):
+    """古巴国家地震局 (西班牙语 JSON keys)."""
 
-    def _parse_one(self, data: dict) -> EventEnvelope | None:
-        event_id = to_str(data.get("id")) or ""
-        if not event_id:
+    def parse(self, raw: any) -> list[EventEnvelope] | None:
+        items = raw if isinstance(raw, list) else ([raw] if isinstance(raw, dict) else None)
+        if not items:
             return None
+        results = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            env = self._parse_item(item)
+            if env:
+                results.append(env)
+        return results if results else None
+
+    def _parse_item(self, item: dict) -> EventEnvelope | None:
+        magnitude = to_float(item.get("magnitud"))
+        if magnitude is None:
+            return None
+
+        latitude = to_float(item.get("latitud"))
+        longitude = to_float(item.get("longitud"))
+        if latitude is None or longitude is None:
+            return None
+
+        depth = to_float(item.get("profundidad"))
+        occurred_at = self._parse_time(item.get("tiempoutc"))
+
+        place_name = str(item.get("nombre", "") or "").strip()
+        provincia = str(item.get("provincia", "") or "").strip()
+        if provincia:
+            place_name = f"{place_name}, {provincia}" if place_name else provincia
+
+        event_id = ""
+        if occurred_at:
+            event_id = f"cenais_{occurred_at.strftime('%Y%m%d%H%M%S')}_{latitude}_{longitude}"
+
         event = EarthquakeReport(
             source_id=self.source_id,
             event_id=event_id,
-            occurred_at=parse_ts(data.get("time", data.get("datetime", ""))),
-            latitude=to_float(data.get("lat", data.get("latitude"))),
-            longitude=to_float(data.get("lon", data.get("longitude"))),
-            depth=to_float(data.get("depth")),
-            magnitude=to_float(data.get("mag", data.get("magnitude"))),
-            place_name=str(data.get("place", data.get("location", "")) or ""),
-            raw=data,
+            occurred_at=occurred_at,
+            latitude=latitude,
+            longitude=longitude,
+            depth=depth,
+            magnitude=magnitude,
+            place_name=place_name if place_name else None,
+            raw=item,
         )
         return EventEnvelope(
             identity=EventIdentity(event_id=event_id, source_id=self.source_id, event_type="earthquake"),
             event=event,
         )
+
+    @staticmethod
+    def _parse_time(time_str: str | None) -> datetime | None:
+        if not time_str:
+            return None
+        try:
+            dt = datetime.strptime(str(time_str).strip(), "%Y/%m/%dT%H:%M:%S")
+            return dt.replace(tzinfo=timezone.utc)
+        except (ValueError, TypeError):
+            return None
 
 
 # ── CSNC (智利, HTML 表格) ──
@@ -372,40 +498,142 @@ class GeonetParser(BaseParser):
         return results if results else None
 
 
-# ── NRCan (加拿大, XML → dict) ──
+# ── NRCan (加拿大, QuakeML XML) ──
+#
+# 数据源返回 QuakeML 1.2 XML 格式
+# 命名空间: http://quakeml.org/xmlns/bed/1.2
+
 
 @ParserRegistry.register("nrcan_http")
 class NrcanParser(BaseParser):
-    """加拿大自然资源部 (XML → dict)."""
+    """加拿大自然资源部 (QuakeML XML)."""
+
+    QUAKEML_NS = "http://quakeml.org/xmlns/bed/1.2"
 
     def parse(self, raw: any) -> list[EventEnvelope] | None:
         if isinstance(raw, dict):
-            entries = raw.get("entries", raw.get("features", [raw]))
-            if not isinstance(entries, list):
-                entries = [raw]
-            results = []
-            for entry in entries:
-                if not isinstance(entry, dict):
-                    continue
-                event_id = to_str(entry.get("id")) or hashlib.md5(str(entry).encode()).hexdigest()[:12]
-                event = EarthquakeReport(
-                    source_id=self.source_id,
-                    event_id=event_id,
-                    occurred_at=parse_ts(entry.get("time", entry.get("datetime", ""))),
-                    latitude=to_float(entry.get("lat", entry.get("latitude"))),
-                    longitude=to_float(entry.get("lon", entry.get("longitude"))),
-                    depth=to_float(entry.get("depth")),
-                    magnitude=to_float(entry.get("mag", entry.get("magnitude"))),
-                    place_name=str(entry.get("place", entry.get("location", "")) or ""),
-                    region=str(entry.get("region", "") or ""),
-                    raw=entry,
-                )
-                results.append(EventEnvelope(
-                    identity=EventIdentity(event_id=event_id, source_id=self.source_id, event_type="earthquake"),
-                    event=event,
-                ))
-            return results if results else None
+            # 向后兼容 dict 输入
+            return self._parse_dict(raw)
+        if isinstance(raw, str):
+            return self._parse_xml(raw)
         return None
+
+    def _parse_dict(self, raw: dict) -> list[EventEnvelope] | None:
+        entries = raw.get("entries", raw.get("features", [raw]))
+        if not isinstance(entries, list):
+            entries = [raw]
+        results = []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            event_id = to_str(entry.get("id")) or hashlib.md5(str(entry).encode()).hexdigest()[:12]
+            event = EarthquakeReport(
+                source_id=self.source_id,
+                event_id=event_id,
+                occurred_at=parse_ts(entry.get("time", entry.get("datetime", ""))),
+                latitude=to_float(entry.get("lat", entry.get("latitude"))),
+                longitude=to_float(entry.get("lon", entry.get("longitude"))),
+                depth=to_float(entry.get("depth")),
+                magnitude=to_float(entry.get("mag", entry.get("magnitude"))),
+                place_name=str(entry.get("place", entry.get("location", "")) or ""),
+                region=str(entry.get("region", "") or ""),
+                raw=entry,
+            )
+            results.append(EventEnvelope(
+                identity=EventIdentity(event_id=event_id, source_id=self.source_id, event_type="earthquake"),
+                event=event,
+            ))
+        return results if results else None
+
+    def _parse_xml(self, raw: str) -> list[EventEnvelope] | None:
+        """解析 QuakeML XML 文本。"""
+        try:
+            root = ET.fromstring(raw)
+        except ET.ParseError:
+            return None
+
+        ns = {"q": self.QUAKEML_NS}
+        results = []
+
+        for event_elem in root.findall(".//q:event", ns):
+            env = self._parse_xml_event(event_elem, ns)
+            if env:
+                results.append(env)
+
+        return results if results else None
+
+    def _parse_xml_event(self, elem: ET.Element, ns: dict) -> EventEnvelope | None:
+        raw_event_id = elem.get("publicID", "")
+        if not raw_event_id:
+            return None
+        event_id = raw_event_id.split("/")[-1] if "/" in raw_event_id else raw_event_id
+
+        event_type = elem.findtext("q:type", "", ns)
+        if event_type not in ("earthquake", ""):
+            return None
+
+        # 地名
+        desc = elem.find("q:description", ns)
+        place_name = ""
+        if desc is not None:
+            place_name = desc.findtext("q:text", "", ns).strip()
+
+        # 震源
+        origin = elem.find("q:origin", ns)
+        if origin is None:
+            return None
+
+        occurred_at = self._parse_xml_time(origin.find("q:time/q:value", ns))
+        latitude = self._parse_xml_float(origin.find("q:latitude/q:value", ns))
+        longitude = self._parse_xml_float(origin.find("q:longitude/q:value", ns))
+        depth_m = self._parse_xml_float(origin.find("q:depth/q:value", ns))
+        depth_km = depth_m / 1000.0 if depth_m is not None else None
+
+        # 震级
+        mag_elem = elem.find("q:magnitude", ns)
+        magnitude = None
+        if mag_elem is not None:
+            magnitude = self._parse_xml_float(mag_elem.find("q:mag/q:value", ns))
+
+        if magnitude is None:
+            return None
+
+        event = EarthquakeReport(
+            source_id=self.source_id,
+            event_id=event_id,
+            occurred_at=occurred_at,
+            latitude=latitude,
+            longitude=longitude,
+            depth=depth_km,
+            magnitude=magnitude,
+            place_name=place_name or None,
+            raw={"publicID": raw_event_id},
+        )
+        return EventEnvelope(
+            identity=EventIdentity(event_id=event_id, source_id=self.source_id, event_type="earthquake"),
+            event=event,
+        )
+
+    @staticmethod
+    def _parse_xml_time(time_elem: ET.Element | None) -> datetime | None:
+        if time_elem is None or not time_elem.text:
+            return None
+        try:
+            ts = time_elem.text.strip()
+            if ts.endswith("Z"):
+                ts = ts[:-1] + "+00:00"
+            return datetime.fromisoformat(ts).astimezone(timezone.utc)
+        except (ValueError, AttributeError):
+            return None
+
+    @staticmethod
+    def _parse_xml_float(elem: ET.Element | None) -> float | None:
+        if elem is None or not elem.text:
+            return None
+        try:
+            return float(elem.text.strip())
+        except (ValueError, TypeError):
+            return None
 
 
 # ── USGS Weekly (GeoJSON) ──

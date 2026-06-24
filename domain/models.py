@@ -130,6 +130,7 @@ class EewEvent:
     announced_time: datetime | None = None  # 发布时间（UTC）
     is_warn: bool | None = None        # 是否发布警报
     serial: int | None = None          # 报次序号
+    province: str | None = None        # 省份（CEA 省级融合源专用）
     warn_areas: list | None = None     # 预警区域列
     accuracy: dict | None = None
     raw: dict = field(default_factory=dict)

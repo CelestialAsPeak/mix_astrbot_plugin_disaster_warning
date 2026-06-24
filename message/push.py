@@ -55,11 +55,12 @@ class SessionSender:
 class PushExecutionService:
     """推送执行服务。"""
 
-    def __init__(self, config: dict, sender: SessionSender, map_builder=None, snet_renderer=None):
+    def __init__(self, config: dict, sender: SessionSender, map_builder=None, snet_renderer=None, gq_card_builder=None):
         self.config = config
         self.sender = sender
         self.map_builder = map_builder
         self.snet_renderer = snet_renderer
+        self.gq_card_builder = gq_card_builder
 
     async def _render_event_map(self, envelope: EventEnvelope) -> list[str] | None:
         """渲染震中地图（缩略图 + 细节图），返回 base64 列表。"""
@@ -145,6 +146,23 @@ class PushExecutionService:
             logger.error(f"[Push] S-Net 测站图渲染失败: {e}")
         return None
 
+    async def _render_gq_card(self, envelope: EventEnvelope) -> str | None:
+        """渲染 GlobalQuake 专属卡片，返回 base64。"""
+        if not self.gq_card_builder:
+            return None
+        try:
+            msg_fmt = self.config.get("message_format", {})
+            template_name = msg_fmt.get("global_quake_template", "Aurora")
+            return await self.gq_card_builder.build(
+                envelope,
+                template_name=template_name,
+                map_source=msg_fmt.get("map_source", "PetalMap矢量图亮"),
+                zoom_level=msg_fmt.get("gq_map_zoom_level", msg_fmt.get("map_zoom_level", 5)),
+            )
+        except Exception as e:
+            logger.error(f"[Push] GQ 卡片渲染失败: {e}")
+        return None
+
     async def execute_push(
         self,
         envelope: EventEnvelope,
@@ -176,17 +194,27 @@ class PushExecutionService:
             chain_components = [Plain(text)]
             # S-Net 专用测站分布图
             is_snet = envelope.source_id in ("snet_http", "snet") and isinstance(envelope.event, EarthquakeReport)
+            is_gq = envelope.source_id == "global_quake" and isinstance(envelope.event, EewEvent)
             if is_snet:
                 snet_b64 = await self._render_snet_map(envelope)
                 if snet_b64:
                     for b64 in snet_b64:
                         chain_components.append(Image.fromBase64(b64))
+            elif is_gq and self.gq_card_builder:
+                # GlobalQuake 专用卡片（含震中地图）
+                gq_b64 = await self._render_gq_card(envelope)
+                if gq_b64:
+                    chain_components.append(Image.fromBase64(gq_b64))
             else:
                 # 地震震中图
                 map_b64_list = await self._render_event_map(envelope)
                 if map_b64_list:
                     for b64 in map_b64_list:
                         chain_components.append(Image.fromBase64(b64))
+            # GlobalQuake 卡片（也可以由上游预渲染后塞入 metadata）
+            gq_img = envelope.metadata.get("_gq_card") if envelope.metadata else None
+            if gq_img and not is_gq:
+                chain_components.append(Image.fromBase64(gq_img))
             # 台风路径图（由 _typhoon_push_adapter 预渲染后塞入 metadata）
             typhoon_img = envelope.metadata.get("_typhoon_image") if envelope.metadata else None
             if typhoon_img:

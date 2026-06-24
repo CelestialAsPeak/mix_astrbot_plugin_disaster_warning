@@ -81,6 +81,7 @@ class HttpPoller:
         try:
             async with self._session.get(self.url, timeout=60) as resp:
                 if resp.status != 200:
+                    logger.warning(f"[Poller:{self.name}] HTTP {resp.status}")
                     return
 
                 if self._raw_text:
@@ -92,9 +93,9 @@ class HttpPoller:
                     await self._handler(self.name, data)
 
         except asyncio.TimeoutError:
-            logger.debug(f"[Poller:{self.name}] timeout")
+            logger.warning(f"[Poller:{self.name}] 请求超时")
         except Exception as e:
-            logger.debug(f"[Poller:{self.name}] error: {e}")
+            logger.warning(f"[Poller:{self.name}] 请求失败: {e}")
 
 
 class HttpPollManager:
@@ -126,6 +127,17 @@ class HttpPollManager:
     async def start_all(self):
         for poller in self._pollers.values():
             await poller.start()
+
+    async def fetch_one(self, name: str) -> bool:
+        """立即触发单个轮询器的请求（不等待定时周期），返回是否成功触发。"""
+        poller = self._pollers.get(name)
+        if poller is None:
+            return False
+        try:
+            await poller._fetch()
+            return True
+        except Exception:
+            return False
 
     async def stop_all(self):
         for poller in self._pollers.values():

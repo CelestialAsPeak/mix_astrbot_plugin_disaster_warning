@@ -89,3 +89,9 @@ AstrBot 的 `_parse_schema` 对 `type: object` 必读 `v["items"]`，不加就 K
 
 ### 5. `router._get_parser()` 不存在
 `_handle_http_poll_result` 调了不存在的私有方法，应直接 `ParserRegistry.get()`。
+
+### 6. jma_report_fanstudio 已删除（2026-06-24）
+FAN Studio 不提供 JMA 地震报告数据，这是误加的源。已从 sources.json 和 parser 中移除。对应的 `provider_source_names: ["jma-report"]` 不再路由到任何解析器。
+
+### 7. 标题格式统一（2026-06-24）
+全部数据源标题格式改为 `[CODE/机构名 事件标签]` 格式。使用 `code_override` 字段支持混合大小写 CODE（如 GlobalQuake、GeoNet、NRCan、CEA-pr）。`institution_key.upper()` 作为默认 CODE 来源。参见 `_make_source_title` 和 `_SOURCE_DISPLAY_INFO` 加载逻辑。

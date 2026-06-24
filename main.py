@@ -33,7 +33,7 @@ try:
     from .broker.websocket import WebSocketManager
     from .broker.http_poller import HttpPollManager
     from .message.push import SessionSender, PushExecutionService, PushOrchestrator
-    from .domain.models import EewEvent, EventEnvelope
+    from .domain.models import EewEvent, EarthquakeReport, EventEnvelope
     from .message.presenters import present, present_eew, present_earthquake_report, WEATHER_TYPE_MAP, LEVEL_COLORS
     from .message.browser import BrowserManager
     from .message.render.typhoon_map_renderer import TyphoonMapRenderer
@@ -266,6 +266,15 @@ class MixDisasterWarningPlugin(Star):
             self._snet_renderer = SnetMapRenderer(self.browser_manager, self._plugin_root)
             logger.info("[Mix] SNET 测站图渲染器就绪")
 
+            # GlobalQuake 专属卡片构建器
+            from .message.builders.global_quake_card_builder import GlobalQuakeCardBuilder
+            self._gq_card_builder = GlobalQuakeCardBuilder(
+                plugin_root=self._plugin_root,
+                temp_dir=self._temp_dir,
+                browser_manager=self.browser_manager,
+            )
+            logger.info("[Mix] GQ 卡片构建器就绪")
+
             # 台风管理器
             self._typhoon_manager = TyphoonManager(
                 db=self.database,
@@ -280,7 +289,7 @@ class MixDisasterWarningPlugin(Star):
             session_sender = SessionSender(self.context)
             push_svc = PushExecutionService(
                 dict(self.config), session_sender, map_builder=self._map_builder,
-                snet_renderer=self._snet_renderer,
+                snet_renderer=self._snet_renderer, gq_card_builder=self._gq_card_builder,
             )
             self._orchestrator = PushOrchestrator(dict(self.config), push_svc.execute_push, sender=session_sender)
 
@@ -844,14 +853,17 @@ class MixDisasterWarningPlugin(Star):
 
         parser = ParserRegistry.get(source_id)
         if parser is None:
+            logger.warning(f"[HTTP] {source_id} 无注册解析器")
             return
 
         result = parser.parse_message(raw_data)
         if not result:
+            logger.info(f"[HTTP] {source_id} 解析器无返回（数据格式不匹配/空）")
             return
 
         envelopes = result if isinstance(result, list) else [result]
         if not envelopes:
+            logger.info(f"[HTTP] {source_id} 解析结果为空列表")
             return
 
         # 按发生时间降序排序，确保取到最新一条
@@ -875,9 +887,16 @@ class MixDisasterWarningPlugin(Star):
         # 比较上次推送过的 ID
         last = self._http_last_event.get(source_id)
         if last is None:
-            # 首次启动：只记录 ID，不推送
+            # 首次启动：记录 ID + 入库（不推送）
             self._http_last_event[source_id] = {"event_id": eid}
-            logger.info(f"[HTTP] {source_id} 首条已记录（不推送）: {eid}")
+            if self.database:
+                try:
+                    await self.database.insert_envelope(newest)
+                    logger.info(f"[HTTP] {source_id} 首条已入库: {eid}")
+                except Exception as ex:
+                    logger.warning(f"[HTTP] {source_id} 首条入库失败: {ex}")
+            else:
+                logger.info(f"[HTTP] {source_id} 首条已记录（不推送）: {eid}")
             return
 
         if eid == last.get("event_id"):
@@ -901,8 +920,8 @@ class MixDisasterWarningPlugin(Star):
         #    接入存在法律风险，故意不添加。如果你知道自己在做什么，
         #    可以自己在这里加上 icl_http 的 poller。
         POLLERS = {
-            "funvisis_http": ("http://www.funvisis.gob.ve/maravilla.json", 120, False),
-            "cenais_http": ("https://www.cenais.gob.cu/lastquake/php/lastweek.php", 120, False),
+            "funvisis_http": ("http://www.funvisis.gob.ve/maravilla.json", 120, True),
+            "cenais_http": ("https://www.cenais.gob.cu/lastquake/php/lastweek.php", 120, True),
             "geonet_http": ("https://api.geonet.org.nz/quake?MMI=-1", 30, False),
             "nrcan_http": ("https://www.earthquakescanada.nrcan.gc.ca/cache/earthquakes/canada-30.xml", 60, True),
             "tmd_http": ("https://earthquake.tmd.go.th/", 120, True),
@@ -1438,11 +1457,26 @@ class MixDisasterWarningPlugin(Star):
         if not rows:
             rows = await self._query_source_eew(source_id, 1)
         if not rows:
+            # 对于 HTTP 轮询源，DB 无数据时立即触发一次抓取
+            _HTTP_SOURCES = {
+                "funvisis_http", "cenais_http", "geonet_http", "nrcan_http",
+                "tmd_http", "phivolcs_http", "csnc_http", "usgs_weekly",
+            }
+            if source_id in _HTTP_SOURCES and self.http_poll_manager:
+                logger.info(f"[查询] {source_id} DB 无数据，触发即时抓取")
+                try:
+                    await self.http_poll_manager.fetch_one(source_id)
+                except Exception as ex:
+                    logger.warning(f"[查询] {source_id} 即时抓取失败: {ex}")
+                # 抓取后重新查 DB
+                rows = await self._query_source_events(source_id, 5)
+                if not rows:
+                    rows = await self._query_source_eew(source_id, 1)
+        if not rows:
             yield event.plain_result(f"📡 {display} 暂无数据")
             return
         r = rows[0]
 
-        from domain.models import EarthquakeReport, EewEvent
         from datetime import datetime
         raw_json = r.get("raw_json")
         raw = {}
@@ -1453,11 +1487,22 @@ class MixDisasterWarningPlugin(Star):
                 raw = {}
 
         ts = r.get("time") or ""
+        # 如果 time 列为空，尝试从 raw_json 中提取
+        if not ts and raw:
+            ts = str(raw.get("time") or raw.get("originTime") or raw.get("shockTime") or raw.get("tiempoutc") or "")
         occurred_at = None
         if ts:
             try:
-                occurred_at = datetime.strptime(ts[:19], "%Y-%m-%d %H:%M:%S")
-            except ValueError:
+                # DB 存的是 occurred_at.isoformat() 格式，如 "2026-06-24T15:30:00+00:00"
+                # 也处理 "2026/06/06T22:55:16"（CENAIS 原始格式）
+                for fmt in ("%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S"):
+                    try:
+                        occurred_at = datetime.strptime(ts[:19].replace("T", " "), fmt)
+                        if occurred_at:
+                            break
+                    except ValueError:
+                        continue
+            except Exception:
                 pass
 
         event_type = str(r.get("type") or "")
@@ -1550,6 +1595,10 @@ class MixDisasterWarningPlugin(Star):
     async def q_hko(self, e):
         async for r in self._quick_query(e, "hko_fanstudio", "HKO"): yield r
 
+    @filter.regex(r"^/usp(?:\s|$)")
+    async def q_usp(self, e):
+        async for r in self._quick_query(e, "usp_fanstudio", "USP"): yield r
+
     @filter.regex(r"^/gfz(?:\s|$)")
     async def q_gfz(self, e):
         async for r in self._quick_query(e, "gfz_fanstudio", "GFZ"): yield r
@@ -1569,6 +1618,10 @@ class MixDisasterWarningPlugin(Star):
     @filter.regex(r"^/sa(?:\s|$)")
     async def q_sa(self, e):
         async for r in self._quick_query(e, "sa_fanstudio", "ShakeAlert"): yield r
+
+    @filter.regex(r"^/(?:gq|globalquake)(?:\s|$)")
+    async def q_gq(self, e):
+        async for r in self._quick_query(e, "global_quake", "GlobalQuake"): yield r
 
     @filter.regex(r"^/nrcan(?:\s|$)")
     async def q_nrcan(self, e):
@@ -1617,6 +1670,22 @@ class MixDisasterWarningPlugin(Star):
     @filter.regex(r"^/gb(?:\s|$)")
     async def q_gb(self, e):
         async for r in self._quick_query(e, "cenais_http", "CENAIS"): yield r
+
+    @filter.regex(r"^/tmd(?:\s|$)")
+    async def q_tmd(self, e):
+        async for r in self._quick_query(e, "tmd_http", "TMD"): yield r
+
+    @filter.regex(r"^/csnc(?:\s|$)")
+    async def q_csnc(self, e):
+        async for r in self._quick_query(e, "csnc_http", "CSNC"): yield r
+
+    @filter.regex(r"^/funvisis(?:\s|$)")
+    async def q_funvisis(self, e):
+        async for r in self._quick_query(e, "funvisis_http", "FUNVISIS"): yield r
+
+    @filter.regex(r"^/wnrl(?:\s|$)")
+    async def q_wnrl(self, e):
+        async for r in self._quick_query(e, "funvisis_http", "FUNVISIS"): yield r
 
     @filter.regex(r"^/(?:snet|s-net|S-Net)(?:\s|$)")
     async def q_snet(self, e):

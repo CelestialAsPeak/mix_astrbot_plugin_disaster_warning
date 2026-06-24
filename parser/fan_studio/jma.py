@@ -1,7 +1,8 @@
 """
 FAN Studio — 日本气象厅 (JMA) 解析器。
 
-数据源: jma_fanstudio (EEW), jma_report_fanstudio (地震报告)
+数据源: jma_fanstudio (EEW)
+注意: jma_report_fanstudio 已移除 — FAN Studio 不提供 JMA 地震报告数据（2026-06-24）
 """
 
 from __future__ import annotations
@@ -75,42 +76,43 @@ class JMAEEWParser(BaseParser):
         )]
 
 
-@ParserRegistry.register("jma_report_fanstudio")
-class JMAReportParser(BaseParser):
-    """日本气象厅 (JMA) 地震报告解析器。"""
-
-    def parse(self, raw: dict) -> list[EventEnvelope] | None:
-        if not isinstance(raw, dict):
-            return None
-        event_id = to_str(raw.get("eventId")) or to_str(raw.get("id")) or ""
-        if not event_id:
-            return None
-
-        occurred_at = self._parse_datetime(raw.get("originTime") or raw.get("time") or raw.get("shockTime") or "")
-
-        event = EarthquakeReport(
-            source_id=self.source_id,
-            event_id=event_id,
-            occurred_at=occurred_at,
-            latitude=to_float(raw.get("latitude")),
-            longitude=to_float(raw.get("longitude")),
-            depth=to_float(raw.get("depth")),
-            magnitude=to_float(raw.get("magnitude")),
-            magnitude_type=to_str(raw.get("magnitudeType")),
-            place_name=str(raw.get("placeName", "") or ""),
-            region=str(raw.get("region", "") or ""),
-            raw=raw,
-        )
-
-        identity = EventIdentity(
-            event_id=event_id,
-            source_id=self.source_id,
-            event_type="earthquake",
-            provider_family="fan_studio",
-        )
-
-        return [EventEnvelope(
-            identity=identity,
-            event=event,
-            payload=SourcePayload(source_id=self.source_id, provider_family="fan_studio", raw=raw),
-        )]
+# jma_report_fanstudio 已移除 — FAN Studio 不提供 JMA 地震报告（2026-06-24）
+# @ParserRegistry.register("jma_report_fanstudio")
+# class JMAReportParser(BaseParser):
+#     """日本气象厅 (JMA) 地震报告解析器。"""
+#
+#     def parse(self, raw: dict) -> list[EventEnvelope] | None:
+#         if not isinstance(raw, dict):
+#             return None
+#         event_id = to_str(raw.get("eventId")) or to_str(raw.get("id")) or ""
+#         if not event_id:
+#             return None
+#
+#         occurred_at = self._parse_datetime(raw.get("originTime") or raw.get("time") or raw.get("shockTime") or "")
+#
+#         event = EarthquakeReport(
+#             source_id=self.source_id,
+#             event_id=event_id,
+#             occurred_at=occurred_at,
+#             latitude=to_float(raw.get("latitude")),
+#             longitude=to_float(raw.get("longitude")),
+#             depth=to_float(raw.get("depth")),
+#             magnitude=to_float(raw.get("magnitude")),
+#             magnitude_type=to_str(raw.get("magnitudeType")),
+#             place_name=str(raw.get("placeName", "") or ""),
+#             region=str(raw.get("region", "") or ""),
+#             raw=raw,
+#         )
+#
+#         identity = EventIdentity(
+#             event_id=event_id,
+#             source_id=self.source_id,
+#             event_type="earthquake",
+#             provider_family="fan_studio",
+#         )
+#
+#         return [EventEnvelope(
+#             identity=identity,
+#             event=event,
+#             payload=SourcePayload(source_id=self.source_id, provider_family="fan_studio", raw=raw),
+#         )]
