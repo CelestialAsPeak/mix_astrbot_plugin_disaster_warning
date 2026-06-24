@@ -1123,12 +1123,12 @@
             "default": true
           },
           "min_shindo": {
-            "description": "最小触发震度（日本标准）",
+            "description": "最小触发震度（日本标准，含负值）",
             "type": "float",
-            "hint": "有测站实测震度≥此值时推送。震度是 S-Net 海底测站记录的实时摇晃强度",
+            "hint": "有测站实测震度≥此值时推送。可设为负值以捕获微震，如 -3.0 包含所有可用测站",
             "default": 0.5,
             "slider": {
-              "min": 0.0,
+              "min": -5.0,
               "max": 7.0,
               "step": 0.1
             }

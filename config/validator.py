@@ -107,7 +107,29 @@ class ConfigValidator:
         if not isinstance(cfg, dict):
             return {}
 
-        # 从 schema 加载所有 filter 的默认结构
+        # ═══════════════════════════════════════
+        # 第 1 步：迁移旧版 key（schema 默认值加载前执行）
+        # 这样即使 schema 有同名新 key 也不会干扰迁移
+        # ═══════════════════════════════════════
+        _SHINDO_FILTERS = {"jma_scale_filter", "cwa_scale_filter", "snet_filter"}
+        for source_id, filter_cfg in cfg.items():
+            if not isinstance(filter_cfg, dict):
+                continue
+            if source_id in _SHINDO_FILTERS:
+                # 震度过滤器：min_magnitude → min_shindo（移除 != 0.0 守卫，0.0 也需迁移）
+                if "min_magnitude" in filter_cfg and "min_shindo" not in filter_cfg:
+                    filter_cfg["min_shindo"] = filter_cfg.pop("min_magnitude")
+            else:
+                # 普通过滤器：min_intensity/烈度 → 最小烈度
+                if "最小烈度" not in filter_cfg:
+                    if "烈度" in filter_cfg:
+                        filter_cfg["最小烈度"] = filter_cfg.pop("烈度")
+                    elif "min_intensity" in filter_cfg:
+                        filter_cfg["最小烈度"] = filter_cfg.pop("min_intensity")
+
+        # ═══════════════════════════════════════
+        # 第 2 步：从 _conf_schema.json 加载默认值（仅缺失字段补全）
+        # ═══════════════════════════════════════
         try:
             import json
             from pathlib import Path
@@ -129,33 +151,20 @@ class ConfigValidator:
         except Exception:
             logger.warning("[Validator] 无法从 schema 加载 filter 默认值")
 
-        # 兜底 setdefault（确保数值字段存在）
-        # 同时迁移旧版 min_intensity/烈度 → 最小烈度 + S-Net min_magnitude → min_shindo
-        _SHINDO_FILTERS = {"jma_scale_filter", "cwa_scale_filter", "snet_filter"}
+        # ═══════════════════════════════════════
+        # 第 3 步：兜底 setdefault + 清理不应出现的旧 key 残留
+        # ═══════════════════════════════════════
         for source_id, filter_cfg in cfg.items():
-            if isinstance(filter_cfg, dict):
-                # ── 震度过滤器：不添加 最小烈度 ──
-                if source_id in _SHINDO_FILTERS:
-                    # ⚠ 先迁移旧 key（setdefault 前），防止 setdefault 覆盖
-                    if "min_magnitude" in filter_cfg and "min_shindo" not in filter_cfg:
-                        if filter_cfg["min_magnitude"] != 0.0:
-                            filter_cfg["min_shindo"] = filter_cfg.pop("min_magnitude")
-                    filter_cfg.setdefault("min_shindo", 0.5)
-                    # 清理震度过滤器上不应出现的旧 key 残留
-                    for _old_k in ("最小烈度", "烈度", "min_intensity"):
-                        filter_cfg.pop(_old_k, None)
-                    continue
-
-                # ── 普通过滤器：确保震级 + 烈度字段 ──
+            if not isinstance(filter_cfg, dict):
+                continue
+            if source_id in _SHINDO_FILTERS:
+                filter_cfg.setdefault("min_shindo", 0.5)
+                # 震度过滤器不应有烈度字段
+                for _old_k in ("最小烈度", "烈度", "min_intensity"):
+                    filter_cfg.pop(_old_k, None)
+            else:
                 filter_cfg.setdefault("min_magnitude", 0.0)
-                if "最小烈度" in filter_cfg:
-                    pass  # 新版 key 已存在，不动
-                elif "烈度" in filter_cfg:
-                    filter_cfg["最小烈度"] = filter_cfg.pop("烈度")
-                elif "min_intensity" in filter_cfg:
-                    filter_cfg["最小烈度"] = filter_cfg.pop("min_intensity")
-                else:
-                    filter_cfg["最小烈度"] = 0.0
+                filter_cfg.setdefault("最小烈度", 0.0)
         return cfg
 
 
