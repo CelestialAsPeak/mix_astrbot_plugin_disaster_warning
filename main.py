@@ -10,4 +10,4 @@ AstrBot StarManager 优先加载 main.py。
 - 所有改动请改 plugin.py。
 """
 
-from plugin import MixDisasterWarningPlugin  # noqa
+from .plugin import MixDisasterWarningPlugin  # noqa
