@@ -471,6 +471,17 @@
               "step": 0.1
             },
             "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 5.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
           }
         }
       },
@@ -493,6 +504,17 @@
               "step": 0.1
             },
             "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 5.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
           }
         }
       },
@@ -515,6 +537,17 @@
               "step": 0.1
             },
             "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 5.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
           }
         }
       },
@@ -537,6 +570,17 @@
               "step": 0.1
             },
             "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 5.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
           }
         }
       },
@@ -559,6 +603,17 @@
               "step": 0.1
             },
             "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 5.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
           }
         }
       },
@@ -581,6 +636,17 @@
               "step": 0.1
             },
             "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 5.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
           }
         }
       },
@@ -603,6 +669,17 @@
               "step": 0.1
             },
             "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 5.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
           }
         }
       },
@@ -625,6 +702,17 @@
               "step": 0.1
             },
             "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 5.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
           }
         }
       },
@@ -647,6 +735,17 @@
               "step": 0.1
             },
             "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 5.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
           }
         }
       },
@@ -669,6 +768,17 @@
               "step": 0.1
             },
             "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 4.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
           }
         }
       },
@@ -691,6 +801,17 @@
               "step": 0.1
             },
             "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 4.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
           }
         }
       },
@@ -713,6 +834,17 @@
               "step": 0.1
             },
             "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 4.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
           }
         }
       },
@@ -735,6 +867,17 @@
               "step": 0.1
             },
             "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 4.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
           }
         }
       },
@@ -757,6 +900,17 @@
               "step": 0.1
             },
             "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 4.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
           }
         }
       },
@@ -812,6 +966,17 @@
               "step": 0.1
             },
             "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 5.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
           }
         }
       },
@@ -834,6 +999,17 @@
               "step": 0.1
             },
             "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 5.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
           }
         }
       },
@@ -856,6 +1032,17 @@
               "step": 0.1
             },
             "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 4.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
           }
         }
       },
@@ -878,6 +1065,17 @@
               "step": 0.1
             },
             "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 4.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
           }
         }
       },
@@ -900,23 +1098,34 @@
               "step": 0.1
             },
             "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 4.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
           }
         }
       },
       "snet_filter": {
         "description": "S-Net 海底震度专用过滤器",
         "type": "object",
-        "hint": "基于最大震度过滤（日本震度标准）",
+        "hint": "基于 S-Net 海底测站实测震度过滤（日本震度标准，0-7级）",
         "items": {
           "enabled": {
             "description": "启用",
             "type": "bool",
             "default": true
           },
-          "min_magnitude": {
-            "description": "最小触发震度",
+          "min_shindo": {
+            "description": "最小触发震度（日本标准）",
             "type": "float",
-            "hint": "有测站震度大于等于此值时推送",
+            "hint": "有测站实测震度≥此值时推送。震度是 S-Net 海底测站记录的实时摇晃强度",
             "default": 0.5,
             "slider": {
               "min": 0.0,
@@ -1013,6 +1222,17 @@
               "step": 0.1
             },
             "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 4.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
           }
         }
       },
@@ -1035,6 +1255,17 @@
               "step": 0.1
             },
             "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 4.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
           }
         }
       },
@@ -1057,6 +1288,116 @@
               "step": 0.1
             },
             "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 4.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
+          }
+        }
+      },
+      "csnc_filter": {
+        "description": "CSNC 智利专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 4.5,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 5.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
+          }
+        }
+      },
+      "tmd_filter": {
+        "description": "TMD 泰国专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 4.5,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 5.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
+          }
+        }
+      },
+      "phivolcs_filter": {
+        "description": "PHIVOLCS 菲律宾专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 3.0,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 4.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
           }
         }
       }

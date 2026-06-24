@@ -482,7 +482,7 @@ class MixDisasterWarningPlugin(Star):
             ef = self.config.get("earthquake_filters", {})
             sf = ef.get("snet_filter", {}) if isinstance(ef, dict) else {}
             if isinstance(sf, dict) and sf.get("enabled", True):
-                min_shindo = float(sf.get("min_magnitude", 0.5))
+                min_shindo = float(sf.get("min_shindo", 0.5))
         except Exception:
             pass
 

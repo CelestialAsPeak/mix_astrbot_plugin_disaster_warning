@@ -243,20 +243,28 @@ class EarthquakeThresholdRule(BaseRule):
             # JMA/CWA 震度过滤器：min_magnitude OR min_shindo
             if filter_key in ("jma_scale_filter", "cwa_scale_filter"):
                 if isinstance(direct_cfg, dict) and "min_shindo" in direct_cfg:
-                    min_shindo = direct_cfg["min_shindo"]
+                    min_shindo_val = direct_cfg["min_shindo"]
                 else:
-                    min_shindo = f.get("min_shindo", 0)
+                    min_shindo_val = f.get("min_shindo", 0)
                 shindo = self._get_intensity(ctx)  # JMA/CWA 的 max_intensity = 震度
                 mag_ok = (min_mag <= 0 or check_mag is None or check_mag >= min_mag)
-                shindo_ok = (min_shindo <= 0 or shindo is None or shindo >= min_shindo)
+                shindo_ok = (min_shindo_val <= 0 or shindo is None or shindo >= min_shindo_val)
                 if mag_ok or shindo_ok:
                     return RuleDecision.accept(rule_name=self.name)
                 return RuleDecision.reject(
-                    f"{filter_key}: 震级{check_mag}<{min_mag} 且 震度{shindo}<{min_shindo}", self.name)
-            # 普通过滤器：只检查震级
-            if check_mag is not None and check_mag < min_mag:
-                return RuleDecision.reject(f"{filter_key}: {check_mag} < {min_mag}", self.name)
-            return RuleDecision.accept(rule_name=self.name)
+                    f"{filter_key}: 震级{check_mag}<{min_mag} 且 震度{shindo}<{min_shindo_val}", self.name)
+            # 普通过滤器：震级 OR 烈度（对齐 section 2/3 的 OR 逻辑）
+            if isinstance(direct_cfg, dict):
+                min_int = self._get_field(direct_cfg, "最小烈度", "烈度", "min_intensity", default=0)
+            else:
+                min_int = self._get_field(f, "最小烈度", "烈度", "min_intensity", default=0)
+            intensity = self._get_intensity(ctx)
+            mag_ok = (min_mag <= 0 or check_mag is None or check_mag >= min_mag)
+            int_ok = (min_int <= 0 or intensity is None or intensity >= min_int)
+            if mag_ok or int_ok:
+                return RuleDecision.accept(rule_name=self.name)
+            return RuleDecision.reject(
+                f"{filter_key}: 震级{check_mag}<{min_mag} 且 烈度{intensity}<{min_int}", self.name)
 
         # 2) earthquake_filters.{source_id} 直接配置
         direct = filters.get(source_id)

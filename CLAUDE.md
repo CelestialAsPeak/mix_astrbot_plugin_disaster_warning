@@ -56,12 +56,15 @@ origin: https://github.com/CelestialAsPeak/mix_astrbot_plugin_disaster_warning.g
 
 ### 注意
 - ICL 数据源（成都高新所）因法律风险故意不接入，详见 `_setup_http_pollers` 注释
-- SNET 的 `min_magnitude` 实际是测站级 shindo 阈值，已在 `_fetch_snet_once()` 中使用，不再在 `_FILTER_MAP` 中重复过滤（2026-06-24 修复）
+- SNET：`snet_filter` 字段 `min_magnitude` → `min_shindo`，shindo 负值箝位 ≥ 0。不在 `_FILTER_MAP` 中重复过滤（已在 `_fetch_snet_once()` 中用）（2026-06-24 修复）
 - 台风自动推送走 `present_typhoon_push()`（`‖` 前缀格式），不同于查询用的 `_field()` 排版
 - P2P WebSocket 路由已修复：`_route_p2p()` 按 code=556/551/552 分发到 jma_p2p/jma_p2p_info/jma_tsunami_p2p（2026-06-24 修复 Bug 1）
 - USGS 周报轮询已启用：`_setup_http_pollers` 中添加了 usgs_weekly 轮询器（2026-06-24 修复 Bug 6）
 - 标题格式统一：`_make_source_title` 使用 `institution_key.upper()` 作为 CODE（2026-06-24 修复 Bug 5）
 - JMA/CWA 震度过滤器：新增 `jma_scale_filter`/`cwa_scale_filter`，使用 min_shindo（0-7）+min_magnitude OR 逻辑（2026-06-24 修复 Bug 3+7）
+- 全部 22 个过滤器新增 `最小烈度`（slider+hint），含 3 个新增（csnc/tmd/phivolcs 过滤器）（2026-06-24 修复）
+- `EarthquakeThresholdRule` section 1 全部改用 OR 逻辑：震级够 **或** 烈度够即推（2026-06-24 修复）
+- 验证器 `_validate_earthquake_filters`：震度过滤器（jma/cwa/snet）不再添加 `最小烈度`；S-Net `min_magnitude` 自动迁移到 `min_shindo`（2026-06-24 修复）
 
 ## 踩坑记录
 

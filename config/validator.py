@@ -130,9 +130,23 @@ class ConfigValidator:
             logger.warning("[Validator] 无法从 schema 加载 filter 默认值")
 
         # 兜底 setdefault（确保数值字段存在）
-        # 同时迁移旧版 min_intensity/烈度 → 最小烈度
+        # 同时迁移旧版 min_intensity/烈度 → 最小烈度 + S-Net min_magnitude → min_shindo
+        _SHINDO_FILTERS = {"jma_scale_filter", "cwa_scale_filter", "snet_filter"}
         for source_id, filter_cfg in cfg.items():
             if isinstance(filter_cfg, dict):
+                # ── 震度过滤器：不添加 最小烈度 ──
+                if source_id in _SHINDO_FILTERS:
+                    filter_cfg.setdefault("min_shindo", 0.5)
+                    # S-Net 旧版用 min_magnitude 存震度阈值 → 迁移到 min_shindo
+                    if "min_magnitude" in filter_cfg and "min_shindo" not in filter_cfg:
+                        if filter_cfg["min_magnitude"] != 0.0:
+                            filter_cfg["min_shindo"] = filter_cfg["min_magnitude"]
+                    # 清理震度过滤器上不应出现的旧 key 残留
+                    for _old_k in ("最小烈度", "烈度", "min_intensity"):
+                        filter_cfg.pop(_old_k, None)
+                    continue
+
+                # ── 普通过滤器：确保震级 + 烈度字段 ──
                 filter_cfg.setdefault("min_magnitude", 0.0)
                 if "最小烈度" in filter_cfg:
                     pass  # 新版 key 已存在，不动

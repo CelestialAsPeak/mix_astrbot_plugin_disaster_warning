@@ -228,7 +228,8 @@ def _shindo_label(shindo: float) -> str:
     if shindo >= 2.5: return "震度3"
     if shindo >= 1.5: return "震度2"
     if shindo >= 0.5: return "震度1"
-    return "震度0"
+    if shindo >= 0.0: return "震度0"
+    return "震度0以下"
 
 
 def _build_stations(tiles: dict[str, Image.Image]) -> list[dict[str, Any]]:

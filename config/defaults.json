@@ -1,58 +1,72 @@
 {
-  "_note": "Mix灾害预警插件 — 运行时配置默认值。键名格式: category/key",
   "enabled": true,
-  "web_admin": {
-    "enabled": false,
-    "host": "127.0.0.1",
-    "port": 18331,
-    "password": ""
-  },
-  "message_format": {
-    "output_mode": "auto",
-    "max_earthquake_list": 9
-  },
-  "event_deduplication": {
-    "ttl_seconds": 300
-  },
-  "strategies": {
-    "cenc_fusion": {
-      "enabled": false
-    },
-    "cwa_eew_fusion": {
-      "enabled": false
-    }
-  },
+  "admin_users": [],
   "target_sessions": [],
-  "groups": {},
+  "offline_notification_sessions": [],
+  "display_timezone": "UTC+8",
   "data_sources": {
     "fan_studio": {
-      "enabled": true
-    },
-    "wolfx": {
-      "enabled": false
+      "enabled": true,
+      "china_earthquake_warning": false,
+      "china_earthquake_warning_provincial": true,
+      "taiwan_cwa_earthquake": true,
+      "taiwan_cwa_report": true,
+      "china_cenc_earthquake": true,
+      "japan_jma_eew": false,
+      "usgs_earthquake": true,
+      "china_weather_alarm": true,
+      "china_tsunami": true,
+      "emsc_earthquake": false,
+      "fssn_earthquake": false,
+      "kma_earthquake": false,
+      "usp_earthquake": false,
+      "gfz_earthquake": false,
+      "bcsf_earthquake": false,
+      "hko_earthquake": false,
+      "ningxia_earthquake": false,
+      "guangxi_earthquake": false,
+      "shanxi_earthquake": false,
+      "beijing_earthquake": false,
+      "yunnan_earthquake": false,
+      "us_shakealert_eew": false,
+      "kma_eew": false
     },
     "p2p": {
-      "enabled": false
+      "enabled": true,
+      "japan_jma_eew": true,
+      "japan_jma_earthquake": true,
+      "japan_jma_tsunami": true
+    },
+    "wolfx": {
+      "enabled": true,
+      "japan_jma_eew": true,
+      "china_cenc_eew": false,
+      "taiwan_cwa_eew": true,
+      "japan_jma_earthquake": false,
+      "china_cenc_earthquake": true
     },
     "global_quake": {
-      "enabled": false
+      "enabled": true
     },
     "direct_http": {
-      "enabled": false
+      "enabled": false,
+      "geonet": false,
+      "nrcan": false,
+      "usgs_weekly": false,
+      "funvisis": false,
+      "cenais": false,
+      "icl": false,
+      "tmd": false,
+      "csnc": false,
+      "phivolcs": false,
+      "snet": false
     },
     "typhoon": {
-      "enabled": false
+      "enabled": false,
+      "manual_only": false,
+      "cma_typhoon": false,
+      "jma_typhoon": false
     }
-  },
-  "weather_config": {
-    "mention_province": false
-  },
-  "debug_config": {
-    "startup_silence_duration": 30
-  },
-  "local_monitoring": {
-    "enabled": false,
-    "interval": 60
   },
   "earthquake_filters": {
     "keyword_filter": {
@@ -76,59 +90,73 @@
     },
     "emsc_filter": {
       "enabled": true,
-      "min_magnitude": 4.5
+      "min_magnitude": 4.5,
+      "最小烈度": 5.0
     },
     "gfz_filter": {
       "enabled": true,
-      "min_magnitude": 4.5
+      "min_magnitude": 4.5,
+      "最小烈度": 5.0
     },
     "bcsf_filter": {
       "enabled": true,
-      "min_magnitude": 4.5
+      "min_magnitude": 4.5,
+      "最小烈度": 5.0
     },
     "usp_filter": {
       "enabled": true,
-      "min_magnitude": 4.5
+      "min_magnitude": 4.5,
+      "最小烈度": 5.0
     },
     "hko_filter": {
       "enabled": true,
-      "min_magnitude": 4.5
+      "min_magnitude": 4.5,
+      "最小烈度": 5.0
     },
     "fssn_filter": {
       "enabled": true,
-      "min_magnitude": 4.5
+      "min_magnitude": 4.5,
+      "最小烈度": 5.0
     },
     "kma_filter": {
       "enabled": true,
-      "min_magnitude": 4.5
+      "min_magnitude": 4.5,
+      "最小烈度": 5.0
     },
     "sa_filter": {
       "enabled": true,
-      "min_magnitude": 4.5
+      "min_magnitude": 4.5,
+      "最小烈度": 5.0
     },
     "kma_eew_filter": {
       "enabled": true,
-      "min_magnitude": 4.5
+      "min_magnitude": 4.5,
+      "最小烈度": 5.0
     },
     "ningxia_filter": {
       "enabled": true,
-      "min_magnitude": 3.0
+      "min_magnitude": 3.0,
+      "最小烈度": 4.0
     },
     "guangxi_filter": {
       "enabled": true,
-      "min_magnitude": 3.0
+      "min_magnitude": 3.0,
+      "最小烈度": 4.0
     },
     "shanxi_filter": {
       "enabled": true,
-      "min_magnitude": 3.0
+      "min_magnitude": 3.0,
+      "最小烈度": 4.0
     },
     "beijing_filter": {
       "enabled": true,
-      "min_magnitude": 3.0
+      "min_magnitude": 3.0,
+      "最小烈度": 4.0
     },
     "yunnan_filter": {
       "enabled": true,
-      "min_magnitude": 3.0
+      "min_magnitude": 3.0,
+      "最小烈度": 4.0
     },
     "geonet_filter": {
       "enabled": true,
@@ -137,27 +165,32 @@
     },
     "nrcan_filter": {
       "enabled": true,
-      "min_magnitude": 4.5
+      "min_magnitude": 4.5,
+      "最小烈度": 5.0
     },
     "usgs_weekly_filter": {
       "enabled": true,
-      "min_magnitude": 4.5
+      "min_magnitude": 4.5,
+      "最小烈度": 5.0
     },
     "funvisis_filter": {
       "enabled": true,
-      "min_magnitude": 3.0
+      "min_magnitude": 3.0,
+      "最小烈度": 4.0
     },
     "cenais_filter": {
       "enabled": true,
-      "min_magnitude": 3.0
+      "min_magnitude": 3.0,
+      "最小烈度": 4.0
     },
     "icl_filter": {
       "enabled": true,
-      "min_magnitude": 3.0
+      "min_magnitude": 3.0,
+      "最小烈度": 4.0
     },
     "snet_filter": {
       "enabled": true,
-      "min_magnitude": 0.5
+      "min_shindo": 0.5
     },
     "jma_scale_filter": {
       "enabled": true,
@@ -171,16 +204,87 @@
     },
     "sc_eew_filter": {
       "enabled": true,
-      "min_magnitude": 3.0
+      "min_magnitude": 3.0,
+      "最小烈度": 4.0
     },
     "fj_eew_filter": {
       "enabled": true,
-      "min_magnitude": 3.0
+      "min_magnitude": 3.0,
+      "最小烈度": 4.0
     },
     "cq_eew_filter": {
       "enabled": true,
-      "min_magnitude": 3.0
+      "min_magnitude": 3.0,
+      "最小烈度": 4.0
+    },
+    "csnc_filter": {
+      "enabled": true,
+      "min_magnitude": 4.5,
+      "最小烈度": 5.0
+    },
+    "tmd_filter": {
+      "enabled": true,
+      "min_magnitude": 4.5,
+      "最小烈度": 5.0
+    },
+    "phivolcs_filter": {
+      "enabled": true,
+      "min_magnitude": 3.0,
+      "最小烈度": 4.0
     }
   },
-  "admin_users": []
+  "push_frequency_control": {
+    "cea_cwa_report_n": 1,
+    "jma_report_n": 3,
+    "gq_report_n": 5,
+    "final_report_always_push": true,
+    "ignore_non_final_reports": false
+  },
+  "local_monitoring": {
+    "enabled": false,
+    "latitude": 39.9042,
+    "longitude": 116.4074,
+    "place_name": "本地",
+    "strict_mode": false,
+    "intensity_threshold": 4.0
+  },
+  "message_format": {
+    "include_map": true,
+    "map_source": "PetalMap矢量图亮",
+    "map_zoom_level": 5,
+    "playwright_mode": "local"
+  },
+  "weather_config": {
+    "weather_filter": {
+      "enabled": false,
+      "keywords": [],
+      "min_color_level": "白色"
+    },
+    "mention_province": false
+  },
+  "strategies": {
+    "cenc_fusion": {
+      "enabled": false
+    },
+    "cwa_eew_fusion": {
+      "enabled": false
+    }
+  },
+  "websocket_config": {
+    "reconnect_interval": 10,
+    "connection_timeout": 15
+  },
+  "debug_config": {
+    "startup_silence_duration": 0,
+    "filter_heartbeat_messages": true
+  },
+  "web_admin": {
+    "enabled": false,
+    "host": "127.0.0.1",
+    "port": 18331,
+    "password": ""
+  },
+  "event_deduplication": {
+    "ttl_seconds": 300
+  }
 }
