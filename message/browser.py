@@ -435,7 +435,9 @@ class BrowserManager:
                             page, reason="screenshot-missing"
                         )
                         return None
-
+                except Exception:
+                    page_broken = True
+                    raise
                 finally:
                     # 恢复原始视口尺寸，避免影响池中其他页面使用
                     if original_viewport and page:
@@ -458,22 +460,10 @@ class BrowserManager:
                     self._semaphore.release()
 
         except Exception as e:
-            page_broken = True
             logger.error(f"[灾害预警] 卡片渲染失败: {e}")
-            # 上报卡片渲染错误到遥测
-            if self._telemetry and self._telemetry.enabled:
-                await self._telemetry.track_error(
-                    e, module="core.browser_manager.render_card"
-                )
-            # 如果页面损坏，关闭它并恢复页面池（仅本地模式）
-            if page:
-                try:
-                    await page.close()
-                    logger.debug("[灾害预警] 已关闭损坏的页面")
-                except Exception:
-                    pass
-
-                # 恢复页面池
+            # 内层 except 已标记 page_broken=True，finally 已关闭坏页面
+            # 这里只需补回一个页面到池（坏页面被丢弃了）
+            if page_broken:
                 async with self._page_creation_lock:
                     try:
                         if not self._browser or self._closed:
@@ -491,7 +481,6 @@ class BrowserManager:
                                 await self._restart_browser()
                     except Exception as recover_err:
                         logger.error(f"[灾害预警] 页面恢复失败: {recover_err}")
-
             return None
 
     async def _render_card_via_http(
