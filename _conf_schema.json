@@ -384,7 +384,7 @@
               "step": 0.1
             }
           },
-          "min_intensity": {
+          "烈度": {
             "description": "最小烈度（中国标准）",
             "type": "float",
             "hint": "烈度≥此值时推送，烈度=震中预估烈度",
@@ -439,7 +439,7 @@
             },
             "hint": "震级大于等于此值时推送"
           },
-          "min_intensity": {
+          "烈度": {
             "description": "最小烈度",
             "type": "float",
             "default": 5.0,
@@ -780,7 +780,7 @@
             },
             "hint": "震级大于等于此值时推送"
           },
-          "min_intensity": {
+          "烈度": {
             "description": "最小烈度(MMI)",
             "type": "float",
             "default": 5.0,

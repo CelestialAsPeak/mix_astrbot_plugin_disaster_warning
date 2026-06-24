@@ -1,73 +1,186 @@
 {
   "_note": "Mix灾害预警插件 — 运行时配置默认值。键名格式: category/key",
-
   "enabled": true,
-
   "web_admin": {
     "enabled": false,
     "host": "127.0.0.1",
     "port": 18331,
     "password": ""
   },
-
   "message_format": {
     "output_mode": "auto",
     "max_earthquake_list": 9
   },
-
   "event_deduplication": {
     "ttl_seconds": 300
   },
-
   "strategies": {
-    "cenc_fusion": { "enabled": false },
-    "cwa_eew_fusion": { "enabled": false }
+    "cenc_fusion": {
+      "enabled": false
+    },
+    "cwa_eew_fusion": {
+      "enabled": false
+    }
   },
-
   "target_sessions": [],
-
   "groups": {},
-
   "data_sources": {
-    "fan_studio": { "enabled": true },
-    "wolfx": { "enabled": false },
-    "p2p": { "enabled": false },
-    "global_quake": { "enabled": false },
-    "direct_http": { "enabled": false },
-    "typhoon": { "enabled": false }
+    "fan_studio": {
+      "enabled": true
+    },
+    "wolfx": {
+      "enabled": false
+    },
+    "p2p": {
+      "enabled": false
+    },
+    "global_quake": {
+      "enabled": false
+    },
+    "direct_http": {
+      "enabled": false
+    },
+    "typhoon": {
+      "enabled": false
+    }
   },
-
   "weather_config": {
     "mention_province": false
   },
-
   "debug_config": {
     "startup_silence_duration": 30
   },
-
   "local_monitoring": {
     "enabled": false,
     "interval": 60
   },
-
   "earthquake_filters": {
-    "phivolcs_filter": {
+    "keyword_filter": {
+      "enabled": false,
+      "blacklist": [],
+      "whitelist": []
+    },
+    "intensity_filter": {
+      "enabled": true,
+      "min_magnitude": 2.0,
+      "烈度": 4.0
+    },
+    "magnitude_only_filter": {
       "enabled": true,
       "min_magnitude": 4.5
     },
-    "csnc_filter": {
+    "global_quake_filter": {
+      "enabled": true,
+      "min_magnitude": 4.5,
+      "烈度": 5.0
+    },
+    "emsc_filter": {
       "enabled": true,
       "min_magnitude": 4.5
     },
-    "tmd_filter": {
+    "gfz_filter": {
       "enabled": true,
-      "min_magnitude": 4.0
+      "min_magnitude": 4.5
+    },
+    "bcsf_filter": {
+      "enabled": true,
+      "min_magnitude": 4.5
+    },
+    "usp_filter": {
+      "enabled": true,
+      "min_magnitude": 4.5
+    },
+    "hko_filter": {
+      "enabled": true,
+      "min_magnitude": 4.5
+    },
+    "fssn_filter": {
+      "enabled": true,
+      "min_magnitude": 4.5
+    },
+    "kma_filter": {
+      "enabled": true,
+      "min_magnitude": 4.5
+    },
+    "sa_filter": {
+      "enabled": true,
+      "min_magnitude": 4.5
+    },
+    "kma_eew_filter": {
+      "enabled": true,
+      "min_magnitude": 4.5
+    },
+    "ningxia_filter": {
+      "enabled": true,
+      "min_magnitude": 3.0
+    },
+    "guangxi_filter": {
+      "enabled": true,
+      "min_magnitude": 3.0
+    },
+    "shanxi_filter": {
+      "enabled": true,
+      "min_magnitude": 3.0
+    },
+    "beijing_filter": {
+      "enabled": true,
+      "min_magnitude": 3.0
+    },
+    "yunnan_filter": {
+      "enabled": true,
+      "min_magnitude": 3.0
+    },
+    "geonet_filter": {
+      "enabled": true,
+      "min_magnitude": 4.5,
+      "烈度": 5.0
+    },
+    "nrcan_filter": {
+      "enabled": true,
+      "min_magnitude": 4.5
+    },
+    "usgs_weekly_filter": {
+      "enabled": true,
+      "min_magnitude": 4.5
+    },
+    "funvisis_filter": {
+      "enabled": true,
+      "min_magnitude": 3.0
+    },
+    "cenais_filter": {
+      "enabled": true,
+      "min_magnitude": 3.0
+    },
+    "icl_filter": {
+      "enabled": true,
+      "min_magnitude": 3.0
     },
     "snet_filter": {
       "enabled": true,
-      "min_magnitude": 0.0
+      "min_magnitude": 0.5
+    },
+    "jma_scale_filter": {
+      "enabled": true,
+      "min_magnitude": 2.0,
+      "min_shindo": 1.0
+    },
+    "cwa_scale_filter": {
+      "enabled": true,
+      "min_magnitude": 2.0,
+      "min_shindo": 1.0
+    },
+    "sc_eew_filter": {
+      "enabled": true,
+      "min_magnitude": 3.0
+    },
+    "fj_eew_filter": {
+      "enabled": true,
+      "min_magnitude": 3.0
+    },
+    "cq_eew_filter": {
+      "enabled": true,
+      "min_magnitude": 3.0
     }
   },
-
   "admin_users": []
 }

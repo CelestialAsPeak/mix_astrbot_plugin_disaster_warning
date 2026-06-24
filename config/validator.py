@@ -99,13 +99,42 @@ class ConfigValidator:
 
     @staticmethod
     def _validate_earthquake_filters(cfg: Any) -> dict:
-        """校验地震过滤器配置。"""
+        """校验地震过滤器配置。
+
+        从 _conf_schema.json 读取所有 filter 定义及其默认值，
+        确保缺失的 filter 条目被补全。
+        """
         if not isinstance(cfg, dict):
             return {}
+
+        # 从 schema 加载所有 filter 的默认结构
+        try:
+            import json
+            from pathlib import Path
+            _schema_path = Path(__file__).parent.parent / "_conf_schema.json"
+            if _schema_path.exists():
+                with open(_schema_path, encoding="utf-8") as _f:
+                    _schema = json.load(_f)
+                _sf = _schema.get("earthquake_filters", {}).get("items", {})
+                for _fname, _fcfg in _sf.items():
+                    if _fname not in cfg:
+                        cfg[_fname] = {}
+                    _entry = cfg[_fname]
+                    _items = _fcfg.get("items", {})
+                    for _field, _def in _items.items():
+                        if _field == "enabled":
+                            _entry.setdefault("enabled", _def.get("default", True))
+                        elif "default" in _def:
+                            _entry.setdefault(_field, _def["default"])
+        except Exception:
+            logger.warning("[Validator] 无法从 schema 加载 filter 默认值")
+
+        # 兜底 setdefault（确保数值字段存在，兼容新旧 key 名）
         for source_id, filter_cfg in cfg.items():
             if isinstance(filter_cfg, dict):
                 filter_cfg.setdefault("min_magnitude", 0.0)
-                filter_cfg.setdefault("min_intensity", 0.0)
+                filter_cfg.setdefault("烈度", 0.0)
+                filter_cfg.setdefault("min_intensity", 0.0)  # 兼容旧版
         return cfg
 
 

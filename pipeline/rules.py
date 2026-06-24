@@ -262,7 +262,7 @@ class EarthquakeThresholdRule(BaseRule):
         direct = filters.get(source_id)
         if isinstance(direct, dict):
             min_mag = direct.get("min_magnitude", 0)
-            min_int = direct.get("min_intensity", 0)
+            min_int = self._get_field(direct, "烈度", "min_intensity", default=0)
             intensity = self._get_intensity(ctx)
             # OR逻辑：震级够 或 烈度够 即可推送
             mag_ok = (min_mag <= 0 or check_mag is None or check_mag >= min_mag)
@@ -278,7 +278,7 @@ class EarthquakeThresholdRule(BaseRule):
             if not isinstance(gf, dict):
                 continue
             min_mag = gf.get("min_magnitude", 0)
-            min_int = gf.get("min_intensity", 0)
+            min_int = self._get_field(gf, "烈度", "min_intensity", default=0)
             intensity = self._get_intensity(ctx)
             # OR逻辑：震级够 或 烈度够 即通过
             mag_ok = (min_mag <= 0 or check_mag is None or check_mag >= min_mag)
@@ -288,6 +288,14 @@ class EarthquakeThresholdRule(BaseRule):
             return RuleDecision.reject(
                 f"{gf_name}: 震级{check_mag}<{min_mag} 且 烈度{intensity}<{min_int}", self.name)
         return RuleDecision.accept(rule_name=self.name)
+
+    @staticmethod
+    def _get_field(cfg: dict, *keys: str, default=0):
+        """从配置中读取字段值，支持多个 key 名（新名优先，旧名兜底）。"""
+        for k in keys:
+            if k in cfg:
+                return cfg[k]
+        return default
 
     @staticmethod
     def _get_intensity(ctx):
