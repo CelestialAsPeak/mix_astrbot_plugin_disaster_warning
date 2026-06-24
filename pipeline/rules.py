@@ -189,6 +189,8 @@ class EarthquakeThresholdRule(BaseRule):
         # JMA/CWA 震度过滤器
         "jma_fanstudio": "jma_scale_filter", "jma_wolfx": "jma_scale_filter",
         "jma_wolfx_info": "jma_scale_filter", "jma_p2p": "jma_scale_filter",
+        "jma_wolfx_http": "jma_scale_filter", "jma_wolfx_info_http": "jma_scale_filter",
+        "jma_p2p_http": "jma_scale_filter", "jma_p2p_info_http": "jma_scale_filter",
         "cwa_fanstudio": "cwa_scale_filter", "cwa_wolfx": "cwa_scale_filter",
     }
 
@@ -368,7 +370,8 @@ class ReportRule(BaseRule):
         "sc_wolfx_eew": "cea_cwa", "fj_wolfx_eew": "cea_cwa", "cq_wolfx_eew": "cea_cwa",
         "cwa_fanstudio": "cea_cwa", "cwa_wolfx": "cea_cwa",
         "jma_fanstudio": "jma", "jma_wolfx": "jma", "jma_wolfx_info": "jma",
-        "jma_p2p": "jma",
+        "jma_wolfx_http": "jma", "jma_wolfx_info_http": "jma",
+        "jma_p2p": "jma", "jma_p2p_http": "jma", "jma_p2p_info_http": "jma",
         "global_quake": "gq",
     }
 

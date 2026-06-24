@@ -3,6 +3,33 @@ P2P — 地震情报解析器。
 
 数据源: jma_p2p_info
 P2P code: 551 (地震情報)
+
+P2PQuake v2 格式:
+{
+  "id": 123456789,        // P2P 消息 ID（每次唯一）
+  "code": 551,
+  "time": "...",
+  "issue": {
+    "source": "気象庁",
+    "time": "...",
+    "type": "通常"        // "通常" / "訂正" / "取消"
+  },
+  "earthquake": {
+    "id": "20240101000000",  // JMA 地震 ID（同一地震不变）
+    "time": "...",
+    "hypocenter": {...},
+    "maxScale": 40
+  },
+  "points": [...]
+}
+
+JMA 地震情报的多阶段特性：
+  - 通常: 初期报（首次发布）
+  - 訂正: 修正报（震源/震度数据更新）
+  - 取消: 取消报（误报取消）
+
+同一 earthquake.id 会收到多次不同 issue.type 的消息，
+所有阶段的 event_id 应区分对待以避免去重拦截。
 """
 
 from __future__ import annotations
@@ -38,9 +65,24 @@ class P2pJmaReportParser(BaseParser):
         if not isinstance(earthquake, dict):
             return None
 
-        event_id = to_str(earthquake.get("id")) or to_str(raw.get("id")) or ""
-        if not event_id:
+        # JMA 地震情报多阶段处理：
+        #   earthquake.id = 发震时间（同一地震不变）
+        #   issue.type    = "通常" / "訂正" / "取消"
+        #   raw.id        = P2P 消息 ID（每次唯一）
+        base_event_id = to_str(earthquake.get("id")) or ""
+        p2p_msg_id = to_str(raw.get("id")) or ""
+        if not base_event_id and not p2p_msg_id:
             return None
+
+        # 用 issue.type 区分同一地震的不同阶段
+        issue = raw.get("issue", {})
+        issue_type = to_str(issue.get("type")) or "通常"
+        if issue_type not in ("通常", "訂正", "取消"):
+            issue_type = "通常"
+
+        # event_id = 地震ID + 阶段类型（确保各阶段都能通过去重）
+        event_id = f"{base_event_id}|{issue_type}" if base_event_id else p2p_msg_id
+        is_cancel = (issue_type == "取消")
 
         occurred_at = self._parse_datetime(earthquake.get("time", ""))
         intensity_points = raw.get("points") or raw.get("intensityPoints")
@@ -55,6 +97,7 @@ class P2pJmaReportParser(BaseParser):
             magnitude=to_float(earthquake.get("magnitude")),
             place_name=str(earthquake.get("placeName", "") or ""),
             region=str(raw.get("regionName", "") or ""),
+            is_cancel=is_cancel,
             intensity_points=intensity_points,
             raw=raw,
         )
@@ -64,6 +107,7 @@ class P2pJmaReportParser(BaseParser):
             source_id=self.source_id,
             event_type="earthquake",
             provider_family="p2p",
+            is_cancel=is_cancel,
         )
 
         return [EventEnvelope(

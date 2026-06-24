@@ -179,6 +179,10 @@ _SOURCE_NAMES: dict[str, str] = {
     "cenc_wolfx": "CENC", "cwa_wolfx": "CWA",
     "jma_wolfx": "JMA", "jma_p2p": "JMA",
     "jma_p2p_info": "JMA情报", "jma_wolfx_info": "JMA情报",
+    "jma_tsunami_p2p": "JMA",
+    "jma_wolfx_http": "JMA", "jma_wolfx_info_http": "JMA",
+    "jma_p2p_http": "JMA", "jma_p2p_info_http": "JMA",
+    "jma_tsunami_p2p_http": "JMA",
     "sc_wolfx_eew": "SC", "fj_wolfx_eew": "FJ", "cq_wolfx_eew": "CQ",
     "beijing_fanstudio": "BJ", "guangxi_fanstudio": "GX",
     "ningxia_fanstudio": "NX", "shanxi_fanstudio": "SX", "yunnan_fanstudio": "YN",
@@ -328,6 +332,24 @@ def present_earthquake_report(event: EarthquakeReport) -> str:
         csis = _estimate_csis(event.magnitude, event.depth)
         lines.append(_field("预估最大烈度", _format_intensity(csis)))
         lines.append(_field("预估最大震度", _csis_to_shindo(csis)))
+    # JMA 震度观测点（P2P code 551 intensity_points）
+    if event.source_id in ("jma_p2p_info", "jma_p2p_info_http", "jma_wolfx_info") and event.intensity_points:
+        points = event.intensity_points
+        if isinstance(points, list) and len(points) > 0:
+            lines.append(_field("震度观测点", ""))
+            # 按震度降序排列，显示前 8 个
+            sorted_pts = sorted(
+                [p for p in points if isinstance(p, dict) and p.get("scale") is not None],
+                key=lambda p: float(p["scale"]),
+                reverse=True,
+            )
+            for p in sorted_pts[:8]:
+                addr = str(p.get("addr", p.get("pref", "")) or "")
+                scale_val = float(p["scale"])
+                label = _shindo_label_str(scale_val)
+                lines.append(f"    {addr:<12s} {label}")
+            if len(sorted_pts) > 8:
+                lines.append(f"    ...{len(sorted_pts) - 8}个观测点略")
     if event.url:
         lines.append(_field("详情", event.url))
     lines.append(_SEPARATOR)
@@ -335,16 +357,116 @@ def present_earthquake_report(event: EarthquakeReport) -> str:
 
 
 def present_tsunami(event: TsunamiEvent) -> str:
-    """格式化海啸预警消息。"""
-    level_icons = {0: "✅", 1: "🟡", 2: "🟠", 3: "🔴"}
-    level_names = {0: "解除", 1: "注意报", 2: "警报", 3: "大海啸警报"}
-    icon = level_icons.get(event.level, "⚪")
-    title = _make_source_title(event.source_id, "海啸预警")
-    lines = [title]
+    """格式化海啸预警消息（支持 JMA 津波予報 / 中国海啸预警）。"""
+    # ── 级别图标与日文/中文映射 ──
+    level_icons = {3: "🔴", 2: "🟠", 1: "🟡", 0: "✅"}
+
+    # JMA grade → 显示文字（用于 jma_tsunami_p2p 源）
+    jma_grade_names = {
+        "MajorWarning": "大津波警報",
+        "Warning": "津波警報",
+        "Watch": "津波注意報",
+        "解除": "解除",
+    }
+
+    lines = [_make_source_title(event.source_id, "海啸预警")]
+
+    # ── 级别行 ──
+    is_jma = event.source_id == "jma_tsunami_p2p"
+    if is_jma and event.title:
+        # JMA 源：直接用 event.title（大津波警報/津波警報/津波注意報）
+        icon = level_icons.get(event.level, "⚪")
+        lines.append(_SEPARATOR)
+        lines.append(_field("级别", f"{icon} {event.title}"))
+    else:
+        # 通用源（中国海啸预警等）
+        icon = level_icons.get(event.level, "⚪")
+        level_names = {0: "解除", 1: "注意报", 2: "警报", 3: "大海啸警报"}
+        display_title = event.title or level_names.get(event.level, "")
+        lines.append(_SEPARATOR)
+        lines.append(_field("级别", f"{icon} {display_title}"))
+
+    lines.append(_field("发布单位", event.source_name or
+                        ("日本气象厅" if is_jma else "海啸预警中心")))
+
+    if event.timestamp:
+        lines.append(_field("发布时间", event.timestamp.strftime("%Y年%m月%d日 %H:%M")))
+
     lines.append(_SEPARATOR)
-    lines.append(_field("级别", f"{icon} {event.title or level_names.get(event.level, '')}"))
-    if event.areas:
-        lines.append(_field("区域", f"{len(event.areas)} 个"))
+
+    # ── 地震信息（JMA 特有 shock_info） ──
+    if event.shock_info and isinstance(event.shock_info, dict):
+        si = event.shock_info
+        place = si.get("placeName")
+        mag = si.get("magnitude")
+        depth = si.get("depth")
+        lat = si.get("latitude")
+        lon = si.get("longitude")
+        shindo = si.get("shindoLabel")
+
+        if place:
+            lines.append(_field("震源", place))
+        if mag is not None:
+            lines.append(_field("震级", f"M{mag:.1f}"))
+        if depth is not None:
+            lines.append(_field("深度", f"{depth:.0f} km"))
+        if lat is not None and lon is not None:
+            lines.append(_field("经纬度", _format_coords(lat, lon)))
+        if shindo:
+            lines.append(_field("最大震度", shindo))
+        lines.append(_SEPARATOR)
+
+    # ── 区域预报详情 ──
+    areas = event.areas
+    if areas and isinstance(areas, list):
+        # 区分 immediate（立即）和 normal 区域
+        immediate_areas = [a for a in areas if a.get("immediate")]
+        normal_areas = [a for a in areas if not a.get("immediate")]
+
+        if is_jma and immediate_areas:
+            lines.append(_field("立即区域", ""))
+            for a in immediate_areas[:5]:
+                name = a.get("name", "")
+                arrival = a.get("arrivalTime", "")
+                wave = a.get("maxHeight")
+                parts = [name]
+                if wave is not None:
+                    parts.append(f"🌊{wave}m")
+                if arrival:
+                    # 截取时间部分 HH:MM
+                    t = arrival.replace("T", " ")[11:16] if "T" in arrival else arrival[-5:]
+                    parts.append(f"({t}到)")
+                lines.append("    " + " ".join(parts))
+            if len(immediate_areas) > 5:
+                lines.append(f"    ...其他{len(immediate_areas) - 5}区域")
+            lines.append(_SEPARATOR)
+
+        if normal_areas:
+            lines.append(_field("预报区域", ""))
+            for a in normal_areas[:8]:
+                name = a.get("name", "")
+                arrival = a.get("arrivalTime", "")
+                wave = a.get("maxHeight")
+                parts = [name]
+                if wave is not None:
+                    parts.append(f"🌊{wave}m")
+                if arrival:
+                    t = arrival.replace("T", " ")[11:16] if "T" in arrival else arrival[-5:]
+                    parts.append(f"({t}到)")
+                lines.append("    " + " ".join(parts))
+            if len(normal_areas) > 8:
+                lines.append(f"    ...其他{len(normal_areas) - 8}区域")
+    elif areas:
+        # 非标准格式：仅显示数量
+        lines.append(_field("区域", f"{len(areas)} 个"))
+
+    # ── 解除状态 ──
+    if event.level == 0:
+        if is_jma and event.title and "解除" in (event.title or ""):
+            lines.append(_field("状态", "所有海啸警报已解除"))
+        elif not is_jma:
+            lines.append(_field("状态", "海啸警报已解除"))
+
     lines.append(_SEPARATOR)
     return "\n".join(lines)
 

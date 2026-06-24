@@ -72,8 +72,9 @@ except ImportError:
 
 # 触发解析器注册（显式 import，AstrBot 最可靠）
 from .parser.fan_studio import cea, cenc, cwa, jma, global_sources, provincial, generic_eew, tsunami, weather
-from .parser.wolfx import eew as wolfx_eew, province as wolfx_province, report as wolfx_report
+from .parser.wolfx import eew as wolfx_eew, province as wolfx_province, report as wolfx_report, http_report as wolfx_http_report
 from .parser.p2p import eew as p2p_eew, report as p2p_report, tsunami as p2p_tsunami
+from .parser.p2p import http_eew as p2p_http_eew, http_report as p2p_http_report, http_tsunami as p2p_http_tsunami
 from .parser import global_quake as gq_parser, snet as snet_parser
 from .parser.http_poll import parsers as http_poll_parsers
 from .parser.typhoon import cma as typhoon_cma, jma as typhoon_jma
@@ -133,6 +134,8 @@ _SOURCE_DISPLAY: dict[str, str] = {
     "cenc_fanstudio": "中国地震台网", "cenc_wolfx": "CENC(Wolfx)",
     "cwa_fanstudio": "台湾气象署", "cwa_wolfx": "CWA(Wolfx)",
     "jma_fanstudio": "日本气象厅", "jma_wolfx": "JMA(Wolfx)", "jma_wolfx_info": "JMA情报(Wolfx)",
+    "jma_wolfx_http": "JMA(Wolfx HTTP)", "jma_wolfx_info_http": "JMA情报(Wolfx HTTP)",
+    "jma_p2p_http": "JMA(P2P HTTP)", "jma_p2p_info_http": "JMA情报(P2P HTTP)", "jma_tsunami_p2p_http": "JMA海啸(P2P HTTP)",
     "jma_p2p": "JMA(P2P)",
     "usgs_fanstudio": "USGS", "emsc_fanstudio": "EMSC",
     "hko_fanstudio": "HKO", "gfz_fanstudio": "GFZ",
@@ -852,6 +855,8 @@ class MixDisasterWarningPlugin(Star):
 
             url = entry.get("connection_url", "")
             handler = entry.get("connection_handler", "")
+            if handler == "http_poll":
+                continue  # HTTP 轮询源不走 WS 连接
             if handler and url:
                 key = entry.get("connection_group", handler)
                 if key not in groups:
@@ -945,6 +950,13 @@ class MixDisasterWarningPlugin(Star):
             "phivolcs_http": ("https://earthquake.phivolcs.dost.gov.ph/", 120, True),
             "csnc_http": ("https://www.sismologia.cl/index.html", 120, True),
             "usgs_weekly": ("https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_week.geojson", 300, False),
+            # Wolfx HTTP 备用（WS 失能时降级）
+            "jma_wolfx_http": ("https://api.wolfx.jp/jma_eew.json", 30, False),
+            "jma_wolfx_info_http": ("https://api.wolfx.jp/jma_eqlist.json", 60, False),
+            # P2P HTTP 备用（WS 失能时降级）
+            "jma_p2p_http": ("https://api.p2pquake.net/v2/history?codes=556&limit=1", 30, False),
+            "jma_p2p_info_http": ("https://api.p2pquake.net/v2/jma/quake?limit=5", 60, False),
+            "jma_tsunami_p2p_http": ("https://api.p2pquake.net/v2/history?codes=552&limit=1", 60, False),
         }
         for sid, (url, interval, raw_text) in POLLERS.items():
             if sid in sources:
@@ -982,7 +994,7 @@ class MixDisasterWarningPlugin(Star):
         """查询各机构 EEW 状态。"""
         sources_eew = [
             "cea_fanstudio", "cwa_fanstudio", "jma_fanstudio",
-            "jma_p2p", "jma_wolfx", "sa_fanstudio",
+            "jma_p2p", "jma_p2p_http", "jma_wolfx", "jma_wolfx_http", "sa_fanstudio",
             "kma_eew_fanstudio", "global_quake",
         ]
         lines = ["📡 EEW 状态"]
@@ -1478,6 +1490,8 @@ class MixDisasterWarningPlugin(Star):
             _HTTP_SOURCES = {
                 "funvisis_http", "cenais_http", "geonet_http", "nrcan_http",
                 "tmd_http", "phivolcs_http", "csnc_http", "usgs_weekly",
+                "jma_wolfx_http", "jma_wolfx_info_http",
+                "jma_p2p_http", "jma_p2p_info_http", "jma_tsunami_p2p_http",
             }
             if source_id in _HTTP_SOURCES and self.http_poll_manager:
                 logger.info(f"[查询] {source_id} DB 无数据，触发即时抓取")
@@ -1621,7 +1635,63 @@ class MixDisasterWarningPlugin(Star):
 
     @filter.regex(r"^/jma(?:\s|$)")
     async def q_jma(self, e):
-        async for r in self._quick_query(e, "jma_fanstudio", "日本气象厅"): yield r
+        """JMA 综合查询 — EEW + 地震情报 + 海啸。"""
+        lines = ["📡 JMA 日本气象厅综合"]
+        lines.append(_SEPARATOR)
+
+        # ── JMA EEW 源 ──
+        eew_sources = [
+            ("jma_fanstudio", "FAN Studio"),
+            ("jma_p2p", "P2P WS"),
+            ("jma_p2p_http", "P2P HTTP"),
+            ("jma_wolfx", "Wolfx WS"),
+            ("jma_wolfx_http", "Wolfx HTTP"),
+        ]
+        for sid, label in eew_sources:
+            rows = await self._query_source_eew(sid, 1)
+            if rows:
+                r = rows[0]
+                t = _fmt_time_short(r.get("time", ""))
+                mag = r.get("magnitude", "?")
+                place = r.get("place_name", "") or r.get("description", "")[:20]
+                lines.append(f"  ✅ EEW({label}) M{mag} {place} ({t})")
+            else:
+                lines.append(f"  ⏳ EEW({label}) 暂无数据")
+
+        lines.append(_SEPARATOR)
+
+        # ── JMA 地震情报源 ──
+        info_sources = [
+            ("jma_p2p_info", "P2P WS"),
+            ("jma_p2p_info_http", "P2P HTTP"),
+            ("jma_wolfx_info", "Wolfx WS"),
+            ("jma_wolfx_info_http", "Wolfx HTTP"),
+        ]
+        for sid, label in info_sources:
+            rows = await self._query_source_events(sid, 1)
+            if rows:
+                r = rows[0]
+                t = _fmt_time_short(r.get("time", ""))
+                mag = r.get("magnitude", "?")
+                place = r.get("place_name", "") or r.get("description", "")[:20]
+                lines.append(f"  ✅ 情报({label}) M{mag} {place} ({t})")
+            else:
+                lines.append(f"  ⏳ 情报({label}) 暂无数据")
+
+        # ── JMA 海啸 ──
+        tsunami_sources = [("jma_tsunami_p2p", "P2P WS"), ("jma_tsunami_p2p_http", "P2P HTTP")]
+        for sid, label in tsunami_sources:
+            rows = await self._query_source_events(sid, 1)
+            if rows:
+                r = rows[0]
+                t = _fmt_time_short(r.get("time", ""))
+                title = r.get("description", r.get("subtitle", ""))[:30]
+                lines.append(f"  🌊 海啸({label}) {title} ({t})")
+            else:
+                lines.append(f"  ⏳ 海啸({label}) 暂无数据")
+
+        lines.append(_SEPARATOR)
+        yield event.plain_result("\n".join(lines))
 
     @filter.regex(r"^/usgs(?:\s|$)")
     async def q_usgs(self, e):

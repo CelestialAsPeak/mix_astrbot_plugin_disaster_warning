@@ -52,11 +52,23 @@ def parse_ts(ts: Union[str, int, float, None]) -> datetime | None:
         except (ValueError, TypeError):
             pass
 
-    # "YYYY-MM-DD HH:MM:SS.sss" (truncate ms)
+    # "YYYY-MM-DD HH:MM:SS.sss" / "YYYY/MM/DD HH:MM:SS.sss" (truncate ms)
     try:
-        return datetime.strptime(s.split(".")[0], "%Y-%m-%d %H:%M:%S")
+        base = s.split(".")[0]
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S"):
+            try:
+                return datetime.strptime(base, fmt)
+            except (ValueError, TypeError):
+                pass
     except (ValueError, TypeError):
         pass
+
+    # "YYYY/MM/DD HH:MM" (no seconds, Wolfx eqlist / P2P history 格式)
+    for fmt in ("%Y/%m/%d %H:%M", "%Y-%m-%d %H:%M"):
+        try:
+            return datetime.strptime(s, fmt)
+        except (ValueError, TypeError):
+            pass
 
     # 紧凑格式 "20240115123000"
     try:
