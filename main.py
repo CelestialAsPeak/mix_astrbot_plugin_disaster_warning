@@ -156,6 +156,55 @@ _SOURCE_DISPLAY: dict[str, str] = {
 }
 
 
+# ── EEW 机构分组（从 sources.json 动态构建，同 BAK get_institution_catalog） ──
+
+def _build_eew_institutions() -> dict[str, dict]:
+    """从 sources.json 读取所有 query_group=eew 的源，按 institution_key 分组。"""
+    import json
+    from pathlib import Path
+    result: dict[str, dict] = {}
+    path = Path(__file__).parent / "config" / "sources.json"
+    if not path.exists():
+        return result  # 空降级
+    with open(path, encoding="utf-8") as f:
+        sources = json.load(f)
+    for sid, entry in sources.items():
+        if sid.startswith("_"):
+            continue
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("query_group") != "eew":
+            continue
+        ik = (entry.get("institution_key") or "").strip()
+        if not ik:
+            continue
+        item = result.setdefault(ik, {
+            "display_name": entry.get("institution_display_name") or ik,
+            "active_name": entry.get("institution_active_name") or entry.get("institution_display_name") or ik,
+            "source_ids": [],
+        })
+        if sid not in item["source_ids"]:
+            item["source_ids"].append(sid)
+    return result
+
+_EEW_INSTITUTIONS: dict[str, dict] = _build_eew_institutions()
+
+
+def _fmt_elapsed(seconds: int) -> str:
+    """格式化秒数为中文时长。"""
+    seconds = max(0, int(seconds))
+    days, rem = divmod(seconds, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, seconds = divmod(rem, 60)
+    if days > 0:
+        return f"{days}天{hours}时{minutes}分{seconds}秒"
+    if hours > 0:
+        return f"{hours}时{minutes}分{seconds}秒"
+    if minutes > 0:
+        return f"{minutes}分{seconds}秒"
+    return f"{seconds}秒"
+
+
 # ── 帮助文本 ──
 
 _PLUGIN_HELP = """🚨 Mix灾害预警使用说明
@@ -1010,6 +1059,62 @@ class MixDisasterWarningPlugin(Star):
                 lines.append(f"  ⏳ {_SOURCE_DISPLAY.get(sid, sid)} 暂无数据")
         return "\n".join(lines)
 
+    # ── EEW 状态文本生成（BAK get_eew_query_text 移植） ──
+
+    async def _get_eew_status_text(self) -> str:
+        """生成各机构 EEW 状态文本（BAK 版 get_eew_query_text）。"""
+        from datetime import datetime
+        now = datetime.now()
+        active = []
+        inactive = []
+        nodata = []
+
+        for ik, meta in _EEW_INSTITUTIONS.items():
+            dn = meta.get("display_name", ik)
+            an = meta.get("active_name", dn)
+
+            best = None
+            for sid in meta.get("source_ids", []):
+                rows = await self._query_source_eew(sid, 1)
+                if rows:
+                    r = rows[0]
+                    ts = r.get("time", "")
+                    try:
+                        t = datetime.strptime(ts[:19].replace("T", " "), "%Y-%m-%d %H:%M:%S")
+                        el = int((now - t).total_seconds())
+                        if best is None or el < best["elapsed"]:
+                            best = {"elapsed": el, "mag": r.get("magnitude"), "place": r.get("place_name") or (r.get("description") or "")[:20]}
+                    except Exception:
+                        pass
+
+            if best is None:
+                nodata.append(f"- {dn}：暂未收到过 EEW 数据")
+                continue
+
+            if best["elapsed"] <= 300:
+                mag_t = f"{best['mag']:.1f}" if best["mag"] is not None else "?"
+                active.append(f"[{an}] 当前正在发布地震预警：M {mag_t} {best['place'] or '未知地点'}")
+            else:
+                inactive.append((best["elapsed"], f"{_fmt_elapsed(best['elapsed'])} 无 {dn}"))
+
+
+        inactive.sort(key=lambda x: x[0])
+        lines = []
+        if active:
+            lines.extend(active)
+        if inactive:
+            if active:
+                lines.append("")
+            lines.extend(t for _, t in inactive)
+        if not active and not inactive:
+            lines.append("当前没有正在生效的地震预警")
+        if nodata:
+            if lines:
+                lines.append("")
+            lines.append("以下机构暂未收到过 EEW 数据：")
+            lines.extend(nodata)
+        return "\n".join(lines)
+
     # ═══════════════════ 命令: 帮助 ═══════════════════
 
     @filter.regex(r"^/灾害预警$")
@@ -1281,6 +1386,17 @@ class MixDisasterWarningPlugin(Star):
         except Exception as e:
             logger.error(f"[EEW] 格式展示异常: {e}", exc_info=True)
             yield event.plain_result(f"❌ 格式展示失败: {e}")
+
+    # ── /盼震 命令（BAK 版移植，多别名） ──
+
+    @filter.regex(r"^/(?:盘阵|磐震|潘振|盼震|earth)(?:\s|$)")
+    async def eew_pending_cmd(self, event: AstrMessageEvent):
+        try:
+            text = await self._get_eew_status_text()
+            yield event.plain_result(text)
+        except Exception as ex:
+            logger.error(f"[盼震] 异常: {ex}", exc_info=True)
+            yield event.plain_result(f"❌ 查询失败: {ex}")
 
     @filter.regex(r"^/(?:气象预警查询|气象预警)(?:\s|$)")
     async def weather_query_cmd(
@@ -1955,6 +2071,20 @@ class MixDisasterWarningPlugin(Star):
                 logger.warning(f"[SNET] 渲染异常: {ex}")
 
         yield e.plain_result(text)
+
+    # ── BAK 版迁移的缺失快捷指令 ──
+
+    @filter.regex(r"^/kma_eew(?:\s|$)")
+    async def q_kma_eew(self, e):
+        async for r in self._quick_query(e, "kma_eew_fanstudio", "KMA EEW"): yield r
+
+    @filter.regex(r"^/xxl(?:\s|$)")
+    async def q_xxl(self, e):
+        async for r in self._quick_query(e, "geonet_http", "GeoNet"): yield r
+
+    @filter.regex(r"^/cnsc(?:\s|$)")
+    async def q_cnsc(self, e):
+        async for r in self._quick_query(e, "csnc_http", "CSNC"): yield r
 
     # ═══════════════════ 辅助 ═══════════════════
 

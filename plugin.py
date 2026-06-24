@@ -72,8 +72,9 @@ except ImportError:
 
 # 触发解析器注册（显式 import，AstrBot 最可靠）
 from .parser.fan_studio import cea, cenc, cwa, jma, global_sources, provincial, generic_eew, tsunami, weather
-from .parser.wolfx import eew as wolfx_eew, province as wolfx_province, report as wolfx_report
+from .parser.wolfx import eew as wolfx_eew, province as wolfx_province, report as wolfx_report, http_report as wolfx_http_report, http_eew as wolfx_http_eew
 from .parser.p2p import eew as p2p_eew, report as p2p_report, tsunami as p2p_tsunami
+from .parser.p2p import http_eew as p2p_http_eew, http_report as p2p_http_report, http_tsunami as p2p_http_tsunami
 from .parser import global_quake as gq_parser, snet as snet_parser
 from .parser.http_poll import parsers as http_poll_parsers
 from .parser.typhoon import cma as typhoon_cma, jma as typhoon_jma
@@ -133,6 +134,8 @@ _SOURCE_DISPLAY: dict[str, str] = {
     "cenc_fanstudio": "中国地震台网", "cenc_wolfx": "CENC(Wolfx)",
     "cwa_fanstudio": "台湾气象署", "cwa_wolfx": "CWA(Wolfx)",
     "jma_fanstudio": "日本气象厅", "jma_wolfx": "JMA(Wolfx)", "jma_wolfx_info": "JMA情报(Wolfx)",
+    "jma_wolfx_http": "JMA(Wolfx HTTP)", "jma_wolfx_info_http": "JMA情报(Wolfx HTTP)",
+    "jma_p2p_http": "JMA(P2P HTTP)", "jma_p2p_info_http": "JMA情报(P2P HTTP)", "jma_tsunami_p2p_http": "JMA海啸(P2P HTTP)",
     "jma_p2p": "JMA(P2P)",
     "usgs_fanstudio": "USGS", "emsc_fanstudio": "EMSC",
     "hko_fanstudio": "HKO", "gfz_fanstudio": "GFZ",
@@ -151,6 +154,55 @@ _SOURCE_DISPLAY: dict[str, str] = {
     "china_tsunami_fanstudio": "海啸", "china_weather_fanstudio": "气象",
     "sc_wolfx_eew": "四川", "fj_wolfx_eew": "福建", "cq_wolfx_eew": "重庆",
 }
+
+
+# ── EEW 机构分组（从 sources.json 动态构建，同 BAK get_institution_catalog） ──
+
+def _build_eew_institutions() -> dict[str, dict]:
+    """从 sources.json 读取所有 query_group=eew 的源，按 institution_key 分组。"""
+    import json
+    from pathlib import Path
+    result: dict[str, dict] = {}
+    path = Path(__file__).parent / "config" / "sources.json"
+    if not path.exists():
+        return result  # 空降级
+    with open(path, encoding="utf-8") as f:
+        sources = json.load(f)
+    for sid, entry in sources.items():
+        if sid.startswith("_"):
+            continue
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("query_group") != "eew":
+            continue
+        ik = (entry.get("institution_key") or "").strip()
+        if not ik:
+            continue
+        item = result.setdefault(ik, {
+            "display_name": entry.get("institution_display_name") or ik,
+            "active_name": entry.get("institution_active_name") or entry.get("institution_display_name") or ik,
+            "source_ids": [],
+        })
+        if sid not in item["source_ids"]:
+            item["source_ids"].append(sid)
+    return result
+
+_EEW_INSTITUTIONS: dict[str, dict] = _build_eew_institutions()
+
+
+def _fmt_elapsed(seconds: int) -> str:
+    """格式化秒数为中文时长。"""
+    seconds = max(0, int(seconds))
+    days, rem = divmod(seconds, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, seconds = divmod(rem, 60)
+    if days > 0:
+        return f"{days}天{hours}时{minutes}分{seconds}秒"
+    if hours > 0:
+        return f"{hours}时{minutes}分{seconds}秒"
+    if minutes > 0:
+        return f"{minutes}分{seconds}秒"
+    return f"{seconds}秒"
 
 
 # ── 帮助文本 ──
@@ -225,6 +277,8 @@ class MixDisasterWarningPlugin(Star):
         self._typhoon_renderer: TyphoonMapRenderer | None = None
         # SNET 测站分布图渲染器
         self._snet_renderer: SnetMapRenderer | None = None
+        # 震度/烈度图片渲染器
+        self._intensity_img_renderer: "IntensityImageRenderer | None" = None
         import sys as _sys
         _sys.stderr.write(f"[MIX_DBG] __init__ _map_builder={self._map_builder is not None}\n")
         _sys.stderr.flush()
@@ -266,6 +320,29 @@ class MixDisasterWarningPlugin(Star):
             self._snet_renderer = SnetMapRenderer(self.browser_manager, self._plugin_root)
             logger.info("[Mix] SNET 测站图渲染器就绪")
 
+            # 震度/烈度图片渲染器
+            from .message.render.intensity_image_renderer import IntensityImageRenderer
+            self._intensity_img_renderer = IntensityImageRenderer(os.path.join(self._plugin_root, "cache"))
+            logger.info("[Mix] 震度/烈度图片渲染器就绪")
+
+            # GlobalQuake 专属卡片构建器
+            from .message.builders.global_quake_card_builder import GlobalQuakeCardBuilder
+            self._gq_card_builder = GlobalQuakeCardBuilder(
+                plugin_root=self._plugin_root,
+                temp_dir=self._temp_dir,
+                browser_manager=self.browser_manager,
+            )
+            logger.info("[Mix] GQ 卡片构建器就绪")
+
+            # 区域名称翻译服务（用于 GQ 等地名中文化）
+            from .utils.region_service import init_region_service
+            _fe_path = Path(self._plugin_root) / "resources" / "fe_regions_data.json"
+            if _fe_path.exists():
+                init_region_service(str(_fe_path))
+                logger.info("[Mix] 区域翻译服务就绪")
+            else:
+                logger.warning("[Mix] fe_regions_data.json 不存在，区域翻译不可用")
+
             # 台风管理器
             self._typhoon_manager = TyphoonManager(
                 db=self.database,
@@ -280,7 +357,8 @@ class MixDisasterWarningPlugin(Star):
             session_sender = SessionSender(self.context)
             push_svc = PushExecutionService(
                 dict(self.config), session_sender, map_builder=self._map_builder,
-                snet_renderer=self._snet_renderer,
+                snet_renderer=self._snet_renderer, gq_card_builder=self._gq_card_builder,
+                intensity_img_renderer=self._intensity_img_renderer,
             )
             self._orchestrator = PushOrchestrator(dict(self.config), push_svc.execute_push, sender=session_sender)
 
@@ -826,6 +904,8 @@ class MixDisasterWarningPlugin(Star):
 
             url = entry.get("connection_url", "")
             handler = entry.get("connection_handler", "")
+            if handler == "http_poll":
+                continue  # HTTP 轮询源不走 WS 连接
             if handler and url:
                 key = entry.get("connection_group", handler)
                 if key not in groups:
@@ -919,6 +999,13 @@ class MixDisasterWarningPlugin(Star):
             "phivolcs_http": ("https://earthquake.phivolcs.dost.gov.ph/", 120, True),
             "csnc_http": ("https://www.sismologia.cl/index.html", 120, True),
             "usgs_weekly": ("https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_week.geojson", 300, False),
+            # Wolfx HTTP 备用（WS 失能时降级）
+            "jma_wolfx_http": ("https://api.wolfx.jp/jma_eew.json", 30, False),
+            "jma_wolfx_info_http": ("https://api.wolfx.jp/jma_eqlist.json", 60, False),
+            # P2P HTTP 备用（WS 失能时降级）
+            "jma_p2p_http": ("https://api.p2pquake.net/v2/history?codes=556&limit=1", 30, False),
+            "jma_p2p_info_http": ("https://api.p2pquake.net/v2/jma/quake?limit=5", 60, False),
+            "jma_tsunami_p2p_http": ("https://api.p2pquake.net/v2/history?codes=552&limit=1", 60, False),
         }
         for sid, (url, interval, raw_text) in POLLERS.items():
             if sid in sources:
@@ -956,7 +1043,7 @@ class MixDisasterWarningPlugin(Star):
         """查询各机构 EEW 状态。"""
         sources_eew = [
             "cea_fanstudio", "cwa_fanstudio", "jma_fanstudio",
-            "jma_p2p", "jma_wolfx", "sa_fanstudio",
+            "jma_p2p", "jma_p2p_http", "jma_wolfx", "jma_wolfx_http", "sa_fanstudio",
             "kma_eew_fanstudio", "global_quake",
         ]
         lines = ["📡 EEW 状态"]
@@ -970,6 +1057,62 @@ class MixDisasterWarningPlugin(Star):
                 lines.append(f"  ✅ {_SOURCE_DISPLAY.get(sid, sid)} M{mag} {place} ({t})")
             else:
                 lines.append(f"  ⏳ {_SOURCE_DISPLAY.get(sid, sid)} 暂无数据")
+        return "\n".join(lines)
+
+    # ── EEW 状态文本生成（BAK get_eew_query_text 移植） ──
+
+    async def _get_eew_status_text(self) -> str:
+        """生成各机构 EEW 状态文本（BAK 版 get_eew_query_text）。"""
+        from datetime import datetime
+        now = datetime.now()
+        active = []
+        inactive = []
+        nodata = []
+
+        for ik, meta in _EEW_INSTITUTIONS.items():
+            dn = meta.get("display_name", ik)
+            an = meta.get("active_name", dn)
+
+            best = None
+            for sid in meta.get("source_ids", []):
+                rows = await self._query_source_eew(sid, 1)
+                if rows:
+                    r = rows[0]
+                    ts = r.get("time", "")
+                    try:
+                        t = datetime.strptime(ts[:19].replace("T", " "), "%Y-%m-%d %H:%M:%S")
+                        el = int((now - t).total_seconds())
+                        if best is None or el < best["elapsed"]:
+                            best = {"elapsed": el, "mag": r.get("magnitude"), "place": r.get("place_name") or (r.get("description") or "")[:20]}
+                    except Exception:
+                        pass
+
+            if best is None:
+                nodata.append(f"- {dn}：暂未收到过 EEW 数据")
+                continue
+
+            if best["elapsed"] <= 300:
+                mag_t = f"{best['mag']:.1f}" if best["mag"] is not None else "?"
+                active.append(f"[{an}] 当前正在发布地震预警：M {mag_t} {best['place'] or '未知地点'}")
+            else:
+                inactive.append((best["elapsed"], f"{_fmt_elapsed(best['elapsed'])} 无 {dn}"))
+
+
+        inactive.sort(key=lambda x: x[0])
+        lines = []
+        if active:
+            lines.extend(active)
+        if inactive:
+            if active:
+                lines.append("")
+            lines.extend(t for _, t in inactive)
+        if not active and not inactive:
+            lines.append("当前没有正在生效的地震预警")
+        if nodata:
+            if lines:
+                lines.append("")
+            lines.append("以下机构暂未收到过 EEW 数据：")
+            lines.extend(nodata)
         return "\n".join(lines)
 
     # ═══════════════════ 命令: 帮助 ═══════════════════
@@ -991,7 +1134,12 @@ class MixDisasterWarningPlugin(Star):
         if wolfx_sources and self.database:
             lines.append("  ── Wolfx 源 ──")
             for sid in wolfx_sources:
-                rows = await self._query_source_events(sid, 1)
+                # EEW 源（含 _wolfx 后缀不含 _info 的）查 eew 表，情报源查 earthquake 表
+                is_eew = "_info" not in sid
+                if is_eew:
+                    rows = await self._query_source_eew(sid, 1)
+                else:
+                    rows = await self._query_source_events(sid, 1)
                 if rows:
                     r = rows[0]
                     t = _fmt_time_short(r.get("time", ""))
@@ -1239,6 +1387,17 @@ class MixDisasterWarningPlugin(Star):
             logger.error(f"[EEW] 格式展示异常: {e}", exc_info=True)
             yield event.plain_result(f"❌ 格式展示失败: {e}")
 
+    # ── /盼震 命令（BAK 版移植，多别名） ──
+
+    @filter.regex(r"^/(?:盘阵|磐震|潘振|盼震|earth)(?:\s|$)")
+    async def eew_pending_cmd(self, event: AstrMessageEvent):
+        try:
+            text = await self._get_eew_status_text()
+            yield event.plain_result(text)
+        except Exception as ex:
+            logger.error(f"[盼震] 异常: {ex}", exc_info=True)
+            yield event.plain_result(f"❌ 查询失败: {ex}")
+
     @filter.regex(r"^/(?:气象预警查询|气象预警)(?:\s|$)")
     async def weather_query_cmd(
         self, event: AstrMessageEvent,
@@ -1452,6 +1611,8 @@ class MixDisasterWarningPlugin(Star):
             _HTTP_SOURCES = {
                 "funvisis_http", "cenais_http", "geonet_http", "nrcan_http",
                 "tmd_http", "phivolcs_http", "csnc_http", "usgs_weekly",
+                "jma_wolfx_http", "jma_wolfx_info_http",
+                "jma_p2p_http", "jma_p2p_info_http", "jma_tsunami_p2p_http",
             }
             if source_id in _HTTP_SOURCES and self.http_poll_manager:
                 logger.info(f"[查询] {source_id} DB 无数据，触发即时抓取")
@@ -1529,6 +1690,27 @@ class MixDisasterWarningPlugin(Star):
             )
             text = present_earthquake_report(rep)
 
+        # 震度/烈度预览图（地震报告 + GQ，非 JMA/CWA 源）
+        intensity_b64 = []
+        if self._intensity_img_renderer and source_id not in ("snet_http", "snet") and not source_id.startswith(("jma_", "cwa_")):
+            is_eligible = (
+                event_type not in ("earthquake_warning", "eew")
+                or source_id == "global_quake"
+            )
+            if is_eligible:
+                mag = r.get("magnitude")
+                depth = r.get("depth")
+                if mag is not None:
+                    try:
+                        s_path, i_path = self._intensity_img_renderer.render_both(
+                            mag, depth or 10.0,
+                        )
+                        for p in (s_path, i_path):
+                            if p and os.path.exists(p):
+                                with open(p, "rb") as f:
+                                    intensity_b64.append(base64.b64encode(f.read()).decode())
+                    except Exception as ex:
+                        logger.warning(f"[查询] {display} 烈度/震度图渲染异常: {ex}")
         lat, lon = r.get("latitude"), r.get("longitude")
         if lat is not None and lon is not None and self._map_builder:
             try:
@@ -1551,10 +1733,16 @@ class MixDisasterWarningPlugin(Star):
                             pass
 
                 if b64_list:
-                    yield event.chain_result([Plain(text)] + [Image.fromBase64(b) for b in b64_list])
+                    all_imgs = [Image.fromBase64(b) for b in intensity_b64] + [Image.fromBase64(b) for b in b64_list]
+                    yield event.chain_result([Plain(text)] + all_imgs)
                     return
             except Exception as e:
                 logger.warning(f"[查询] {display} 地图渲染异常: {e}")
+
+        # 只有烈度/震度图（没有地图时）
+        if intensity_b64:
+            yield event.chain_result([Plain(text)] + [Image.fromBase64(b) for b in intensity_b64])
+            return
 
         yield event.plain_result(text)
 
@@ -1568,7 +1756,63 @@ class MixDisasterWarningPlugin(Star):
 
     @filter.regex(r"^/jma(?:\s|$)")
     async def q_jma(self, e):
-        async for r in self._quick_query(e, "jma_fanstudio", "日本气象厅"): yield r
+        """JMA 综合查询 — EEW + 地震情报 + 海啸。"""
+        lines = ["📡 JMA 日本气象厅综合"]
+        lines.append(_SEPARATOR)
+
+        # ── JMA EEW 源 ──
+        eew_sources = [
+            ("jma_fanstudio", "FAN Studio"),
+            ("jma_p2p", "P2P WS"),
+            ("jma_p2p_http", "P2P HTTP"),
+            ("jma_wolfx", "Wolfx WS"),
+            ("jma_wolfx_http", "Wolfx HTTP"),
+        ]
+        for sid, label in eew_sources:
+            rows = await self._query_source_eew(sid, 1)
+            if rows:
+                r = rows[0]
+                t = _fmt_time_short(r.get("time", ""))
+                mag = r.get("magnitude", "?")
+                place = r.get("place_name", "") or r.get("description", "")[:20]
+                lines.append(f"  ✅ EEW({label}) M{mag} {place} ({t})")
+            else:
+                lines.append(f"  ⏳ EEW({label}) 暂无数据")
+
+        lines.append(_SEPARATOR)
+
+        # ── JMA 地震情报源 ──
+        info_sources = [
+            ("jma_p2p_info", "P2P WS"),
+            ("jma_p2p_info_http", "P2P HTTP"),
+            ("jma_wolfx_info", "Wolfx WS"),
+            ("jma_wolfx_info_http", "Wolfx HTTP"),
+        ]
+        for sid, label in info_sources:
+            rows = await self._query_source_events(sid, 1)
+            if rows:
+                r = rows[0]
+                t = _fmt_time_short(r.get("time", ""))
+                mag = r.get("magnitude", "?")
+                place = r.get("place_name", "") or r.get("description", "")[:20]
+                lines.append(f"  ✅ 情报({label}) M{mag} {place} ({t})")
+            else:
+                lines.append(f"  ⏳ 情报({label}) 暂无数据")
+
+        # ── JMA 海啸 ──
+        tsunami_sources = [("jma_tsunami_p2p", "P2P WS"), ("jma_tsunami_p2p_http", "P2P HTTP")]
+        for sid, label in tsunami_sources:
+            rows = await self._query_source_events(sid, 1)
+            if rows:
+                r = rows[0]
+                t = _fmt_time_short(r.get("time", ""))
+                title = r.get("description", r.get("subtitle", ""))[:30]
+                lines.append(f"  🌊 海啸({label}) {title} ({t})")
+            else:
+                lines.append(f"  ⏳ 海啸({label}) 暂无数据")
+
+        lines.append(_SEPARATOR)
+        yield e.plain_result("\n".join(lines))
 
     @filter.regex(r"^/usgs(?:\s|$)")
     async def q_usgs(self, e):
@@ -1609,6 +1853,10 @@ class MixDisasterWarningPlugin(Star):
     @filter.regex(r"^/sa(?:\s|$)")
     async def q_sa(self, e):
         async for r in self._quick_query(e, "sa_fanstudio", "ShakeAlert"): yield r
+
+    @filter.regex(r"^/(?:gq|globalquake)(?:\s|$)")
+    async def q_gq(self, e):
+        async for r in self._quick_query(e, "global_quake", "GlobalQuake"): yield r
 
     @filter.regex(r"^/nrcan(?:\s|$)")
     async def q_nrcan(self, e):
@@ -1823,6 +2071,20 @@ class MixDisasterWarningPlugin(Star):
                 logger.warning(f"[SNET] 渲染异常: {ex}")
 
         yield e.plain_result(text)
+
+    # ── BAK 版迁移的缺失快捷指令 ──
+
+    @filter.regex(r"^/kma_eew(?:\s|$)")
+    async def q_kma_eew(self, e):
+        async for r in self._quick_query(e, "kma_eew_fanstudio", "KMA EEW"): yield r
+
+    @filter.regex(r"^/xxl(?:\s|$)")
+    async def q_xxl(self, e):
+        async for r in self._quick_query(e, "geonet_http", "GeoNet"): yield r
+
+    @filter.regex(r"^/cnsc(?:\s|$)")
+    async def q_cnsc(self, e):
+        async for r in self._quick_query(e, "csnc_http", "CSNC"): yield r
 
     # ═══════════════════ 辅助 ═══════════════════
 
