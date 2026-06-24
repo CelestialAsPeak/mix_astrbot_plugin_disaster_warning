@@ -1555,6 +1555,27 @@ class MixDisasterWarningPlugin(Star):
             )
             text = present_earthquake_report(rep)
 
+        # 震度/烈度预览图（仅地震报告，非 JMA/CWA 源）
+        intensity_b64 = []
+        if (
+            self._intensity_img_renderer
+            and event_type not in ("earthquake_warning", "eew")
+            and not source_id.startswith(("jma_", "cwa_"))
+        ):
+            mag = r.get("magnitude")
+            depth = r.get("depth")
+            if mag is not None:
+                try:
+                    s_path, i_path = self._intensity_img_renderer.render_both(
+                        mag, depth or 10.0,
+                    )
+                    for p in (s_path, i_path):
+                        if p and os.path.exists(p):
+                            with open(p, "rb") as f:
+                                intensity_b64.append(base64.b64encode(f.read()).decode())
+                except Exception as ex:
+                    logger.warning(f"[查询] {display} 烈度/震度图渲染异常: {ex}")
+
         lat, lon = r.get("latitude"), r.get("longitude")
         if lat is not None and lon is not None and self._map_builder:
             try:
@@ -1577,10 +1598,16 @@ class MixDisasterWarningPlugin(Star):
                             pass
 
                 if b64_list:
-                    yield event.chain_result([Plain(text)] + [Image.fromBase64(b) for b in b64_list])
+                    all_imgs = [Image.fromBase64(b) for b in intensity_b64] + [Image.fromBase64(b) for b in b64_list]
+                    yield event.chain_result([Plain(text)] + all_imgs)
                     return
             except Exception as e:
                 logger.warning(f"[查询] {display} 地图渲染异常: {e}")
+
+        # 只有烈度/震度图（没有地图时）
+        if intensity_b64:
+            yield event.chain_result([Plain(text)] + [Image.fromBase64(b) for b in intensity_b64])
+            return
 
         yield event.plain_result(text)
 
