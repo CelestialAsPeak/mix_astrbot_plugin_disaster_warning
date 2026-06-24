@@ -194,10 +194,11 @@ class PushExecutionService:
             # 构建消息链（文本 + 地图图片）
             chain_components = [Plain(text)]
 
-            # 震度/烈度预览图（仅地震报告，非 JMA/CWA 源）
+            # 震度/烈度预览图（仅地震报告，非 JMA/CWA/SNET 源）
             if (
                 self.intensity_img_renderer
                 and isinstance(envelope.event, EarthquakeReport)
+                and envelope.source_id not in ("snet_http", "snet")
                 and not envelope.source_id.startswith(("jma_", "cwa_"))
             ):
                 ev = envelope.event

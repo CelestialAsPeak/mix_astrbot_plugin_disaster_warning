@@ -1557,7 +1557,7 @@ class MixDisasterWarningPlugin(Star):
 
         # 震度/烈度预览图（地震报告 + GQ，非 JMA/CWA 源）
         intensity_b64 = []
-        if self._intensity_img_renderer and not source_id.startswith(("jma_", "cwa_")):
+        if self._intensity_img_renderer and source_id not in ("snet_http", "snet") and not source_id.startswith(("jma_", "cwa_")):
             is_eligible = (
                 event_type not in ("earthquake_warning", "eew")
                 or source_id == "global_quake"
@@ -1565,18 +1565,17 @@ class MixDisasterWarningPlugin(Star):
             if is_eligible:
                 mag = r.get("magnitude")
                 depth = r.get("depth")
-            if mag is not None:
-                try:
-                    s_path, i_path = self._intensity_img_renderer.render_both(
-                        mag, depth or 10.0,
-                    )
-                    for p in (s_path, i_path):
-                        if p and os.path.exists(p):
-                            with open(p, "rb") as f:
-                                intensity_b64.append(base64.b64encode(f.read()).decode())
-                except Exception as ex:
-                    logger.warning(f"[查询] {display} 烈度/震度图渲染异常: {ex}")
-
+                if mag is not None:
+                    try:
+                        s_path, i_path = self._intensity_img_renderer.render_both(
+                            mag, depth or 10.0,
+                        )
+                        for p in (s_path, i_path):
+                            if p and os.path.exists(p):
+                                with open(p, "rb") as f:
+                                    intensity_b64.append(base64.b64encode(f.read()).decode())
+                    except Exception as ex:
+                        logger.warning(f"[查询] {display} 烈度/震度图渲染异常: {ex}")
         lat, lon = r.get("latitude"), r.get("longitude")
         if lat is not None and lon is not None and self._map_builder:
             try:
