@@ -308,7 +308,7 @@ def present_earthquake_report(event: EarthquakeReport) -> str:
                     fallback_to_original=False,
                 )
                 if translated and translated != event.place_name:
-                    lines.append(_field("区划", translated))
+                    lines.append(_field("区划", f"{translated}(仅供参考)"))
             except Exception:
                 pass
     if event.region:
