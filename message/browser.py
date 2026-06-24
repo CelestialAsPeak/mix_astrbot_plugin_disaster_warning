@@ -40,6 +40,7 @@ class BrowserManager:
         self._init_lock = asyncio.Lock()
         self._initialized = False
         self._closed = False
+        self._restarting = False  # 正在重启浏览器，其他渲染不要再触发重启
         self._telemetry = telemetry
         self._mode = mode
         self._server_url = server_url
@@ -462,9 +463,11 @@ class BrowserManager:
         except Exception as e:
             logger.error(f"[灾害预警] 卡片渲染失败: {e}")
             # 内层 except 已标记 page_broken=True，finally 已关闭坏页面
-            # 这里只需补回一个页面到池（坏页面被丢弃了）
-            if page_broken:
+            # 补回一个页面到池（坏页面被丢弃了），但防止连环重启
+            if page_broken and not self._restarting:
                 async with self._page_creation_lock:
+                    if self._restarting:  # 双重检查
+                        return None
                     try:
                         if not self._browser or self._closed:
                             return None
@@ -623,14 +626,21 @@ class BrowserManager:
             )
 
     async def _restart_browser(self):
-        """重启浏览器（浏览器进程死亡时调用）。"""
+        """重启浏览器（浏览器进程死亡时调用）。幂等，防止连环重启。"""
+        if self._restarting:
+            logger.debug("[灾害预警] 浏览器重启已在进行中，跳过")
+            return
+        self._restarting = True
         logger.warning("[灾害预警] 正在重启浏览器...")
-        await self._cleanup()
         try:
-            await self.initialize()
-            logger.info("[灾害预警] 浏览器重启成功")
-        except Exception as e:
-            logger.error(f"[灾害预警] 浏览器重启失败: {e}")
+            await self._cleanup()
+            try:
+                await self.initialize()
+                logger.info("[灾害预警] 浏览器重启成功")
+            except Exception as e:
+                logger.error(f"[灾害预警] 浏览器重启失败: {e}")
+        finally:
+            self._restarting = False
 
     def __del__(self):
         """析构函数 - 确保资源释放"""
