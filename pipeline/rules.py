@@ -221,7 +221,7 @@ class EarthquakeThresholdRule(BaseRule):
             old = self._PEAK_MAG.get(event_id, -1.0)
             if mag > old:
                 self._PEAK_MAG[event_id] = mag
-            check_mag = self._PEAK_MAG[event_id]
+            check_mag = self._PEAK_MAG.get(event_id, mag)
         else:
             check_mag = mag
         if len(self._PEAK_MAG) > 500:
