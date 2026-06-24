@@ -287,5 +287,8 @@
   },
   "event_deduplication": {
     "ttl_seconds": 300
-  }
+  },
+  "sleep_mode_enabled": false,
+  "sleep_mode_groups": [],
+  "sleep_earthquake_filters": {}
 }
