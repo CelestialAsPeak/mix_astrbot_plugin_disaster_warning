@@ -13,9 +13,9 @@
 
 ### 入口文件
 
-`main.py` 仅作兼容转发（AstrBot StarManager 优先加载它），实际业务代码在 `plugin.py`。
-两个目录都有 `main.py`，内容都是 `from plugin import MixDisasterWarningPlugin`。
-**以后只维护 `plugin.py`。**
+**`main.py` 是实体文件**（AstrBot StarManager 优先加载它），包含全部业务代码。
+`plugin.py` 已废弃，仅作引用参考，内容同步于 `main.py`（可用 `cp main.py plugin.py` 同步）。
+**以后只维护 `main.py`。**
 
 ## Git 远程
 
