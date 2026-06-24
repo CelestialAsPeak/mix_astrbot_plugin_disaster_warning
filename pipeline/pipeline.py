@@ -150,10 +150,16 @@ class EventPipeline:
             # 将群组过滤配置合并到上下文中
             group_config = dict(self.config)
             if self.session_manager:
-                # 检查睡眠模式开关 + 群组是否在睡眠模式列表中
+                # 睡眠模式: 同时支持群组ID匹配和会话ID匹配
                 sleep_enabled = self.config.get("sleep_mode_enabled", False)
-                sleep_mode_groups = self.config.get("sleep_mode_groups", [])
-                sleep_mode = sleep_enabled and group_id in sleep_mode_groups
+                sleep_mode_groups = self.config.get("sleep_mode_groups", []) or []
+                sleep_mode = False
+                if sleep_enabled:
+                    if group_id in sleep_mode_groups:
+                        sleep_mode = True
+                    elif any(sg in s for s in sessions for sg in sleep_mode_groups):
+                        # 按会话ID匹配（如 sleep_mode_groups=["985606083"] 匹配 "CAPbots:GroupMessage:985606083"）
+                        sleep_mode = True
                 if sleep_mode:
                     gf = self.session_manager.get_group_sleep_filters(group_id)
                 else:
