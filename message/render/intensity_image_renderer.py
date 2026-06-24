@@ -23,7 +23,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 # ── 图片尺寸 ──
 IMAGE_WIDTH = 750
-IMAGE_HEIGHT = 270
+IMAGE_HEIGHT = 240
 
 # ── CSIS 12 级烈度配色（CAPQuakeQt CSIS_COLORS） ──
 CSIS_COLORS: list[tuple[int, int, int]] = [
@@ -152,13 +152,13 @@ class IntensityImageRenderer:
     @property
     def font_value(self) -> ImageFont.FreeTypeFont:
         if self._font_value is None:
-            self._font_value = _load_font(96)
+            self._font_value = _load_font(120)
         return self._font_value
 
     @property
     def font_label(self) -> ImageFont.FreeTypeFont:
         if self._font_label is None:
-            self._font_label = _load_font(42)
+            self._font_label = _load_font(52)
         return self._font_label
 
     def _cache_key(self, prefix: str, mag: float, depth: float) -> str:
@@ -178,16 +178,19 @@ class IntensityImageRenderer:
         draw = ImageDraw.Draw(img)
         txt_color = _text_color_for_bg(*bg_color)
 
-        # 标签靠左垂直居中
+        # 标签靠左垂直居中（用 bbox 精确居中）
         lb = self.font_label.getbbox(label)
-        lh = lb[3] - lb[1]
-        draw.text((36, (IMAGE_HEIGHT - lh) // 2), label, fill=txt_color, font=self.font_label)
+        ly = (IMAGE_HEIGHT - (lb[3] - lb[1])) // 2 - lb[1]
+        draw.text((36, ly), label, fill=txt_color, font=self.font_label)
 
-        # 数值靠右垂直居中（大号，和标签隔约 10px）
+        # 数值靠右垂直居中（大号）
         vb = self.font_value.getbbox(value)
-        vw = vb[2] - vb[0]
-        vh = vb[3] - vb[1]
-        draw.text((IMAGE_WIDTH - vw - 36, (IMAGE_HEIGHT - vh) // 2), value, fill=txt_color, font=self.font_value)
+        vy = (IMAGE_HEIGHT - (vb[3] - vb[1])) // 2 - vb[1]
+        draw.text((IMAGE_WIDTH - (vb[2] - vb[0]) - 36, vy), value, fill=txt_color, font=self.font_value)
+
+        img.save(cache_path, "PNG")
+        logger.info(f"[IntensityImg] 已生成 → {os.path.basename(cache_path)}")
+        return cache_path
 
         img.save(cache_path, "PNG")
         logger.info(f"[IntensityImg] 已生成 → {os.path.basename(cache_path)}")
