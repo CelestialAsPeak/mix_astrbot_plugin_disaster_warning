@@ -1696,7 +1696,7 @@ class MixDisasterWarningPlugin(Star):
                 lines.append(f"  ⏳ 海啸({label}) 暂无数据")
 
         lines.append(_SEPARATOR)
-        yield event.plain_result("\n".join(lines))
+        yield e.plain_result("\n".join(lines))
 
     @filter.regex(r"^/usgs(?:\s|$)")
     async def q_usgs(self, e):
