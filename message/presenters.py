@@ -138,22 +138,41 @@ _EVENT_LABELS: dict[str, str] = {
     "cwa_wolfx": "強震即時警報",
     "jma_fanstudio": "緊急地震速報",
     "jma_wolfx": "緊急地震速報",
+    "jma_wolfx_http": "緊急地震速報",
     "jma_p2p": "緊急地震速報",
+    "jma_p2p_http": "緊急地震速報",
     "sa_fanstudio": "地震预警",
     "kma_eew_fanstudio": "地震预警",
     "sc_wolfx_eew": "地震预警",
     "fj_wolfx_eew": "地震预警",
     "cq_wolfx_eew": "地震预警",
     "global_quake": "地震预警",
-    # 地震报告源
+    # 地震报告源 — JMA 用 raw issue.type 动态标题，此处仅作兜底
+    "jma_p2p_info": "地震情報",
+    "jma_p2p_info_http": "地震情報",
+    "jma_wolfx_info": "地震情報",
+    "jma_wolfx_info_http": "地震情報",
     "cwa_report_fanstudio": "地震資訊",
-    "jma_p2p_info": "震源・震度情報",
-    "jma_wolfx_info": "震源・震度情報",
     "beijing_fanstudio": "正式测定",
     "guangxi_fanstudio": "正式测定",
     "ningxia_fanstudio": "正式测定",
     "shanxi_fanstudio": "正式测定",
     "yunnan_fanstudio": "正式测定",
+}
+
+# JMA 地震情报 issue.type → 显示标题
+_JMA_ISSUE_TITLE: dict[str, str] = {
+    "ScalePrompt": "震度速報",
+    "Destination": "震源に関する情報",
+    "ScaleAndDestination": "震度・震源に関する情報",
+    "DetailScale": "各地の震度に関する情報",
+    "Foreign": "遠地地震に関する情報",
+    "Other": "その他の情報",
+}
+
+# issue.correct 特殊值 → 覆盖标题（顕著な地震の震源要素更新等）
+_JMA_CORRECT_TITLE: dict[str, str] = {
+    "顕著": "顕著な地震の震源要素更新のお知らせ",
 }
 
 
@@ -233,19 +252,37 @@ def _format_coords(lat: float | None, lon: float | None) -> str:
 
 def present_eew(event: EewEvent) -> str:
     """格式化 EEW 预警消息。"""
-    label = _get_event_label(event.source_id, "EEW")
+    is_jma = event.source_id.startswith("jma_")
     # CEA 省级融合源：追加省份名
     name_suffix = ""
     if event.source_id == "cea_pr_fanstudio" and getattr(event, "province", None):
         name_suffix = f"({event.province})"
-    parts = []
-    if event.report_num:
-        parts.append(f"第{event.report_num}报")
-    if event.is_final:
-        parts.append("最终报")
-    report_tag = " ".join(parts)
-    title_label = f"{label}-{report_tag}" if report_tag else label
-    title = _make_source_title(event.source_id, title_label, name_suffix)
+
+    # ── JMA：警報/予報 区分 + 報次格式 ──
+    if is_jma:
+        if event.is_cancel:
+            label = "緊急地震速報（取消）"
+            report_tag = ""
+        else:
+            warn_str = "警報" if event.is_warn else "予報"
+            label = f"緊急地震速報（{warn_str}）"
+            parts = []
+            if event.report_num:
+                parts.append(f"第{event.report_num}報")
+            if event.is_final:
+                parts.append("（最終）" if event.report_num else "最終報")
+            report_tag = "".join(parts) if parts else ""
+    else:
+        label = _get_event_label(event.source_id, "EEW")
+        parts = []
+        if event.report_num:
+            parts.append(f"第{event.report_num}报")
+        if event.is_final:
+            parts.append("最终报")
+        report_tag = " ".join(parts)
+
+    title_label = f"{label} {report_tag}" if report_tag else label
+    title = _make_source_title(event.source_id, title_label.strip(), name_suffix)
     lines = [title]
     lines.append(_SEPARATOR)
     if event.place_name:
@@ -280,25 +317,49 @@ def present_eew(event: EewEvent) -> str:
     return "\n".join(lines)
 
 
+def _get_jma_report_title(event: EarthquakeReport) -> str:
+    """从 JMA P2P raw 数据提取报告阶段标题。"""
+    raw = event.raw if isinstance(event.raw, dict) else {}
+    issue = raw.get("issue", {}) or {}
+    issue_type = str(issue.get("type", ""))
+    correct = str(issue.get("correct", ""))
+    is_cancel = event.is_cancel or issue_type == "取消"
+
+    if is_cancel:
+        return "地震情報（取消）"
+
+    # issue.correct 特殊检测（顕著な地震の震源要素更新等）
+    if correct and correct != "None" and correct != "Unknown":
+        for key, title in _JMA_CORRECT_TITLE.items():
+            if key in correct:
+                return title
+        return f"{_JMA_ISSUE_TITLE.get(issue_type, '地震情報')}（訂正）"
+
+    # issue.type 标注订正/取消
+    if issue_type == "訂正":
+        return "地震情報（訂正）"
+
+    return _JMA_ISSUE_TITLE.get(issue_type, "地震情報")
+
+
 def present_earthquake_report(event: EarthquakeReport) -> str:
     """格式化地震报告消息。"""
-    # 自定义源标签（如 jma_p2p_info→"震源・震度情報"、省级→"正式测定"）
-    custom_label = _get_event_label(event.source_id, "")
-    if custom_label:
-        base_label = custom_label
-    # CENC: 从 raw 提取 infoTypeName（自动测定/正式测定）
-    elif event.source_id == "cenc_fanstudio":
-        info_type = str(event.raw.get("infoTypeName", event.raw.get("info_type", "")) or "")
-        base_label = info_type if info_type in ("自动测定", "正式测定") else "地震报告"
+    # JMA P2P 源：从 issue.type 动态确定报告阶段标题
+    if event.source_id in ("jma_p2p_info", "jma_p2p_info_http"):
+        base_label = _get_jma_report_title(event)
     else:
-        base_label = "地震报告"
-    parts = []
-    if event.report_num:
-        parts.append(f"第{event.report_num}报")
-    if event.is_final:
-        parts.append("最终报")
-    report_tag = " ".join(parts)
-    title_label = f"{base_label}-{report_tag}" if report_tag else base_label
+        # 自定义源标签（如 JMA Wolfx/省级"正式测定"等）
+        custom_label = _get_event_label(event.source_id, "")
+        if custom_label:
+            base_label = custom_label
+        # CENC: 从 raw 提取 infoTypeName（自动测定/正式测定）
+        elif event.source_id == "cenc_fanstudio":
+            info_type = str(event.raw.get("infoTypeName", event.raw.get("info_type", "")) or "")
+            base_label = info_type if info_type in ("自动测定", "正式测定") else "地震报告"
+        else:
+            base_label = "地震报告"
+
+    title_label = base_label
     lines = [_make_source_title(event.source_id, title_label)]
     lines.append(_SEPARATOR)
     if event.place_name:

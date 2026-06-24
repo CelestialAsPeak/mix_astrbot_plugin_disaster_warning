@@ -89,7 +89,8 @@ class P2pJmaEewHttpParser(BaseParser):
             max_intensity=max_intensity_str,
             serial=serial,
             is_final=bool(raw.get("isFinal", False)),
-            is_warn=bool(raw.get("isWarn", False)),
+            is_warn=True,  # code 556 = 緊急地震速報（警報）
+            is_cancel=bool(raw.get("cancelled", False)),
             is_sea=earthquake.get("isSea"),
             report_num=serial,
             announced_time=self._parse_datetime(issue.get("time", "")),

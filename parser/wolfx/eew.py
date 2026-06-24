@@ -51,6 +51,7 @@ class WolfxEewParser(BaseParser):
             serial=report_num,
             is_final=bool(raw.get("final", False)),
             is_cancel=bool(raw.get("cancel", False)),
+            is_warn=bool(raw.get("isWarn", False)),
             report_num=report_num,
             announced_time=self._parse_datetime(raw.get("createTime", "")),
             raw=raw,
