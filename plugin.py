@@ -208,6 +208,9 @@ class MixDisasterWarningPlugin(Star):
         self.session_config_manager: SessionConfigManager | None = None
         self.notification_center: NotificationCenter | None = None
 
+        # HTTP 轮询首条静默+变化追踪
+        self._http_last_event: dict[str, dict] = {}
+
         # 地图渲染（在 __init__ 初始化，不依赖 AstrBot 是否调 initialize）
         self._plugin_root = str(Path(__file__).parent)
         self._temp_dir = tempfile.mkdtemp(prefix="mix_map_")
@@ -829,6 +832,47 @@ class MixDisasterWarningPlugin(Star):
         for name, cfg in groups.items():
             self.ws_manager.add_connection(name, cfg["url"], cfg.get("backup", ""))
 
+    async def _handle_http_poll_result(self, source_id: str, raw_data: Any) -> None:
+        """HTTP 轮询结果处理：取最新一条，首条不推，变化才推。"""
+        try:
+            from .parser.registry import ParserRegistry
+        except ImportError:
+            from parser.registry import ParserRegistry
+
+        parser = ParserRegistry.get(source_id)
+        if parser is None:
+            return
+
+        result = parser.parse_message(raw_data)
+        if not result:
+            return
+
+        envelopes = result if isinstance(result, list) else [result]
+        if not envelopes:
+            return
+
+        # 取最新一条（解析器返回顺序 = 时间倒序）
+        newest = envelopes[0]
+        eid = newest.identity.event_id
+
+        # 比较上次推送过的 ID
+        last = self._http_last_event.get(source_id)
+        if last is None:
+            # 首次启动：只记录 ID，不推送
+            self._http_last_event[source_id] = {"event_id": eid}
+            logger.info(f"[HTTP] {source_id} 首条已记录（不推送）: {eid}")
+            return
+
+        if eid == last.get("event_id"):
+            # 没有变化，跳过
+            return
+
+        # 有新事件 → 推送，更新记录
+        self._http_last_event[source_id] = {"event_id": eid}
+        logger.info(f"[HTTP] {source_id} 发现新事件: {eid}")
+        if self.pipeline:
+            await self.pipeline.handle(newest)
+
     def _setup_http_pollers(self, sources: dict, router: MessageRouter):
         # ⚠️ ICL（成都高新减灾研究所）属于未公开/非官方数据源，
         #    接入存在法律风险，故意不添加。如果你知道自己在做什么，
@@ -847,7 +891,7 @@ class MixDisasterWarningPlugin(Star):
             if sid in sources:
                 self.http_poll_manager.add_poller(
                     name=sid, url=url, interval=interval,
-                    handler=lambda n, d: self.signal_bus.emit(n, d),
+                    handler=self._handle_http_poll_result,
                     raw_text=raw_text,
                 )
 
