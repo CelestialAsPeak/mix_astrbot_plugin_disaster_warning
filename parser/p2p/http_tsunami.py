@@ -75,14 +75,15 @@ class P2pJmaTsunamiHttpParser(BaseParser):
             if not name:
                 continue
             mh = a.get("maxHeight")
+            fh = a.get("firstHeight", {}) or {}
             areas.append({
                 "name": name,
                 "grade": to_str(a.get("grade")) or "Unknown",
                 "immediate": bool(a.get("immediate", False)),
-                "condition": to_str(a.get("condition")) or "",
+                "condition": to_str(fh.get("condition")) or "",
                 "maxHeight": mh.get("value") if isinstance(mh, dict) else mh,
                 "maxHeightCondition": to_str(mh.get("condition")) if isinstance(mh, dict) else "",
-                "arrivalTime": to_str(a.get("arrivalTime")) or "",
+                "arrivalTime": to_str(fh.get("arrivalTime")) or "",
             })
             del mh
 

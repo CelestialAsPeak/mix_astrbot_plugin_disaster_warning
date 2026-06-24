@@ -65,25 +65,27 @@ class P2pJmaReportParser(BaseParser):
         if not isinstance(earthquake, dict):
             return None
 
-        # JMA 地震情报多阶段处理：
-        #   earthquake.id = 发震时间（同一地震不变）
-        #   issue.type    = "通常" / "訂正" / "取消"
-        #   raw.id        = P2P 消息 ID（每次唯一）
-        base_event_id = to_str(earthquake.get("id")) or ""
+        # 真实数据确认：code 551 使用嵌套 hypocenter，无 flat latitude/longitude/placeName
+        # 也无 earthquake.id，用 earthquake.time（发震时间）作为 base event_id
+        # {"earthquake": {"time": "2026/06/24 16:46:00",
+        #                  "hypocenter": {latitude, longitude, depth, magnitude, name}}}
+        origin_time_str = to_str(earthquake.get("time")) or ""
         p2p_msg_id = to_str(raw.get("id")) or ""
-        if not base_event_id and not p2p_msg_id:
+        if not origin_time_str and not p2p_msg_id:
             return None
 
-        # 用 issue.type 区分同一地震的不同阶段
+        # 用 issue.type 区分同一地震的不同阶段（通常/訂正/取消）
         issue = raw.get("issue", {})
         issue_type = to_str(issue.get("type")) or "通常"
         if issue_type not in ("通常", "訂正", "取消"):
             issue_type = "通常"
 
-        # event_id = 地震ID + 阶段类型（确保各阶段都能通过去重）
-        event_id = f"{base_event_id}|{issue_type}" if base_event_id else p2p_msg_id
+        # event_id = 发震时间|阶段类型（确保各阶段都能通过去重）
+        base_id = origin_time_str.replace(" ", "T").replace("/", "-") if origin_time_str else ""
+        event_id = f"{base_id}|{issue_type}" if base_id else p2p_msg_id
         is_cancel = (issue_type == "取消")
 
+        hypocenter = earthquake.get("hypocenter", {}) or {}
         occurred_at = self._parse_datetime(earthquake.get("time", ""))
         intensity_points = raw.get("points") or raw.get("intensityPoints")
 
@@ -91,12 +93,12 @@ class P2pJmaReportParser(BaseParser):
             source_id=self.source_id,
             event_id=event_id,
             occurred_at=occurred_at,
-            latitude=to_float(earthquake.get("latitude")),
-            longitude=to_float(earthquake.get("longitude")),
-            depth=to_float(earthquake.get("depth")),
-            magnitude=to_float(earthquake.get("magnitude")),
-            place_name=str(earthquake.get("placeName", "") or ""),
-            region=str(raw.get("regionName", "") or ""),
+            latitude=to_float(hypocenter.get("latitude")),
+            longitude=to_float(hypocenter.get("longitude")),
+            depth=to_float(hypocenter.get("depth")),
+            magnitude=to_float(hypocenter.get("magnitude")),
+            place_name=str(hypocenter.get("name", "") or ""),
+            region=to_str(earthquake.get("name", "")),
             is_cancel=is_cancel,
             intensity_points=intensity_points,
             raw=raw,

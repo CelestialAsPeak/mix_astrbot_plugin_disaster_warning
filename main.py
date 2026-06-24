@@ -72,7 +72,7 @@ except ImportError:
 
 # 触发解析器注册（显式 import，AstrBot 最可靠）
 from .parser.fan_studio import cea, cenc, cwa, jma, global_sources, provincial, generic_eew, tsunami, weather
-from .parser.wolfx import eew as wolfx_eew, province as wolfx_province, report as wolfx_report, http_report as wolfx_http_report
+from .parser.wolfx import eew as wolfx_eew, province as wolfx_province, report as wolfx_report, http_report as wolfx_http_report, http_eew as wolfx_http_eew
 from .parser.p2p import eew as p2p_eew, report as p2p_report, tsunami as p2p_tsunami
 from .parser.p2p import http_eew as p2p_http_eew, http_report as p2p_http_report, http_tsunami as p2p_http_tsunami
 from .parser import global_quake as gq_parser, snet as snet_parser

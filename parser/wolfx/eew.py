@@ -74,9 +74,8 @@ class WolfxEewParser(BaseParser):
 
 
 @ParserRegistry.register("jma_wolfx")
-@ParserRegistry.register("jma_wolfx_http")
 class WolfxJmaEewParser(WolfxEewParser):
-    """日本气象厅 (JMA) EEW via Wolfx（WS + HTTP 备用）。"""
+    """日本气象厅 (JMA) EEW via Wolfx WS。"""
     pass
 
 

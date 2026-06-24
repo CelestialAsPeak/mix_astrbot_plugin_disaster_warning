@@ -107,14 +107,17 @@ class P2pTsunamiParser(BaseParser):
                     max_height_val = max_height
                     max_height_cond = None
 
+                # firstHeight 子对象（真实数据确认：arrivalTime/condition 在此）
+                fh = a.get("firstHeight", {}) or {}
+
                 areas.append({
                     "name": area_name,
                     "grade": grade,
                     "immediate": bool(a.get("immediate", False)),
-                    "condition": to_str(a.get("condition")) or "",
+                    "condition": to_str(fh.get("condition")) or "",
                     "maxHeight": max_height_val,
                     "maxHeightCondition": max_height_cond or "",
-                    "arrivalTime": to_str(a.get("arrivalTime")) or "",
+                    "arrivalTime": to_str(fh.get("arrivalTime")) or "",
                 })
 
         # ── 确定最高警报等级 ──

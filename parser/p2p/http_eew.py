@@ -54,30 +54,46 @@ class P2pJmaEewHttpParser(BaseParser):
         if not isinstance(earthquake, dict):
             return None
 
-        event_id = to_str(earthquake.get("id")) or to_str(raw.get("id")) or ""
+        # 真实数据确认：/history?codes=556 和 WS 格式一致（nested hypocenter）
+        issue = raw.get("issue", {}) or {}
+        event_id = to_str(issue.get("eventId")) or to_str(raw.get("id")) or ""
         if not event_id:
             return None
 
-        occurred_at = self._parse_datetime(earthquake.get("time", raw.get("time", "")))
-        serial = to_int(raw.get("serial")) or 0
+        hypocenter = earthquake.get("hypocenter", {}) or {}
+        occurred_at = self._parse_datetime(earthquake.get("originTime", raw.get("time", "")))
+        serial = to_int(issue.get("serial")) or 0
+
+        # 预警区域最高震度（areas[].scaleTo 取最大值 ÷10）
+        areas = raw.get("areas", [])
+        max_scale_val = None
+        if isinstance(areas, list):
+            for a in areas:
+                if isinstance(a, dict):
+                    st = to_float(a.get("scaleTo"))
+                    if st is not None:
+                        sv = st / 10.0
+                        if max_scale_val is None or sv > max_scale_val:
+                            max_scale_val = sv
+        max_intensity_str = _shindo_label_float(max_scale_val) if max_scale_val is not None else ""
 
         event = EewEvent(
             source_id=self.source_id,
             event_id=event_id,
             occurred_at=occurred_at,
-            latitude=to_float(earthquake.get("latitude")),
-            longitude=to_float(earthquake.get("longitude")),
-            depth=to_float(earthquake.get("depth")),
-            magnitude=to_float(earthquake.get("magnitude")),
-            place_name=str(earthquake.get("placeName", "") or ""),
-            max_intensity=str(raw.get("maxIntensity", earthquake.get("maxScale", "")) or ""),
+            latitude=to_float(hypocenter.get("latitude")),
+            longitude=to_float(hypocenter.get("longitude")),
+            depth=to_float(hypocenter.get("depth")),
+            magnitude=to_float(hypocenter.get("magnitude")),
+            place_name=str(hypocenter.get("name", "") or ""),
+            max_intensity=max_intensity_str,
             serial=serial,
             is_final=bool(raw.get("isFinal", False)),
             is_warn=bool(raw.get("isWarn", False)),
             is_sea=earthquake.get("isSea"),
             report_num=serial,
-            announced_time=self._parse_datetime(raw.get("announcedTime", "")),
-            warn_areas=raw.get("warnAreas"),
+            announced_time=self._parse_datetime(issue.get("time", "")),
+            warn_areas=areas,
             raw=raw,
         )
 
@@ -95,3 +111,17 @@ class P2pJmaEewHttpParser(BaseParser):
             identity=identity, event=event,
             payload=SourcePayload(source_id=self.source_id, provider_family="p2p", raw=raw),
         )]
+
+
+def _shindo_label_float(shindo: float) -> str:
+    """JMA 震度浮点值（÷10 后）→ 中文震度等级。"""
+    if shindo >= 6.5: return "震度7"
+    if shindo >= 6.0: return "震度6強"
+    if shindo >= 5.5: return "震度6弱"
+    if shindo >= 5.0: return "震度5強"
+    if shindo >= 4.5: return "震度5弱"
+    if shindo >= 3.5: return "震度4"
+    if shindo >= 2.5: return "震度3"
+    if shindo >= 1.5: return "震度2"
+    if shindo >= 0.5: return "震度1"
+    return "震度0"
