@@ -1222,9 +1222,13 @@ class MixDisasterWarningPlugin(Star):
         lines = ["📢 群组列表"]
         for gid in groups:
             sessions = self.session_config_manager.get_group_sessions(gid)
+            # 获取群组元信息（sleep_mode）
+            gcfg = groups.get(gid, {})
+            sleep_mode = gcfg.get("sleep_mode", False) if isinstance(gcfg, dict) else False
             gf = self.session_config_manager.get_group_filters(gid)
             filter_count = sum(1 for v in gf.values() if isinstance(v, dict)) if isinstance(gf, dict) else 0
-            lines.append(f"  {gid}: {len(sessions)} 会话, {filter_count} 个阈值覆盖")
+            sleep_icon = "🌙" if sleep_mode else "☀️"
+            lines.append(f"  {sleep_icon} {gid}: {len(sessions)} 会话, {filter_count} 个阈值覆盖")
         yield event.plain_result("\n".join(lines))
 
     @filter.regex(r"^/灾害预警群组\s+(\S+)(?:\s|$)")

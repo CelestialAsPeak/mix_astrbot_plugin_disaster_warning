@@ -34,7 +34,7 @@ class SessionConfigManager:
     OVERRIDES_FILE = "group_overrides.json"
 
     # 群组可覆盖的字段白名单
-    ALLOWED_KEYS = {"earthquake_filters", "message_format", "enabled"}
+    ALLOWED_KEYS = {"earthquake_filters", "sleep_earthquake_filters", "message_format", "enabled"}
 
     def __init__(self, global_config: dict[str, Any] | None = None):
         self.global_config = global_config or {}
@@ -118,6 +118,28 @@ class SessionConfigManager:
         static_filters = static.get("earthquake_filters", {})
         if isinstance(static_filters, dict):
             merged = self._deep_merge(merged, static_filters)
+        return merged
+
+    def get_group_sleep_filters(self, group_id: str) -> dict[str, Any]:
+        """获取指定群组的 sleep_earthquake_filters（睡眠模式阈值）。
+
+        未在睡眠模式配置中显式指定的源 → 回退到普通 earthquake_filters，
+        实现"复制一份再改"的效果。
+        """
+        # 1. 先拿到普通 filters 作为基底（回退）
+        normal = self.get_group_filters(group_id)
+        # 2. 睡眠模式 override（优先级最高）
+        sleep_override = self._overrides.get(group_id, {}).get("sleep_earthquake_filters", {})
+        # 3. 群组静态配置中的 sleep_earthquake_filters
+        all_groups = self.list_groups()
+        static = all_groups.get(group_id, {})
+        sleep_static = static.get("sleep_earthquake_filters", {})
+        if isinstance(sleep_static, dict):
+            sleep_overrides = self._deep_merge(sleep_override, sleep_static)
+        else:
+            sleep_overrides = sleep_override
+        # 4. 合并：睡眠配置覆盖到普通配置上（未指定的源保持普通配置）
+        merged = self._deep_merge(normal, sleep_overrides)
         return merged
 
     def get_group_sessions(self, group_id: str) -> list[str]:
@@ -209,10 +231,13 @@ class SessionConfigManager:
         cfg = self.get_group_config(group_id)
         sessions = self.get_group_sessions(group_id)
         filters = self.get_group_filters(group_id)
+        sleep_filters = self.get_group_sleep_filters(group_id)
+        sleep_mode = cfg.get("sleep_mode", False)
 
         lines = [f"📢 群组: {group_id}"]
         lines.append(f"  会话: {sessions}")
         lines.append(f"  推送达: {'开启' if cfg.get('enabled', True) else '关闭'}")
+        lines.append(f"  睡眠模式: {'🌙 开启' if sleep_mode else '☀️ 关闭'}")
 
         if isinstance(filters, dict) and filters:
             lines.append("  阈值过滤:")
@@ -221,6 +246,24 @@ class SessionConfigManager:
                     mag = fcfg.get("min_magnitude", "全局默认")
                     en = "✔" if fcfg.get("enabled", True) else "✘"
                     lines.append(f"    {sid}: M{mag}以上 {en}")
+
+        if sleep_mode and isinstance(sleep_filters, dict) and sleep_filters:
+            has_diff = False
+            diff_lines = []
+            for sid, fcfg in sleep_filters.items():
+                if isinstance(fcfg, dict):
+                    mag = fcfg.get("min_magnitude", "全局默认")
+                    en = "✔" if fcfg.get("enabled", True) else "✘"
+                    diff_lines.append(f"    {sid}: M{mag}以上 {en}")
+                    # 检查是否与普通模式不同
+                    normal_cfg = filters.get(sid, {})
+                    normal_mag = normal_cfg.get("min_magnitude", "全局默认") if isinstance(normal_cfg, dict) else "全局默认"
+                    if mag != normal_mag:
+                        has_diff = True
+            if has_diff or True:  # 有睡眠模式配置就显示
+                lines.append("  🌙 睡眠模式阈值:")
+                lines.extend(diff_lines)
+
         return "\n".join(lines)
 
 
