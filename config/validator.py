@@ -130,15 +130,18 @@ class ConfigValidator:
             logger.warning("[Validator] 无法从 schema 加载 filter 默认值")
 
         # 兜底 setdefault（确保数值字段存在）
-        # 同时迁移旧版 min_intensity → 烈度
+        # 同时迁移旧版 min_intensity/烈度 → 最小烈度
         for source_id, filter_cfg in cfg.items():
             if isinstance(filter_cfg, dict):
                 filter_cfg.setdefault("min_magnitude", 0.0)
-                # 迁移旧版 min_intensity → 烈度（仅当旧 key 存在而新 key 缺失时）
-                if "min_intensity" in filter_cfg and "烈度" not in filter_cfg:
-                    filter_cfg["烈度"] = filter_cfg.pop("min_intensity")
-                elif "烈度" not in filter_cfg and "min_intensity" not in filter_cfg:
-                    filter_cfg["烈度"] = 0.0
+                if "最小烈度" in filter_cfg:
+                    pass  # 新版 key 已存在，不动
+                elif "烈度" in filter_cfg:
+                    filter_cfg["最小烈度"] = filter_cfg.pop("烈度")
+                elif "min_intensity" in filter_cfg:
+                    filter_cfg["最小烈度"] = filter_cfg.pop("min_intensity")
+                else:
+                    filter_cfg["最小烈度"] = 0.0
         return cfg
 
 

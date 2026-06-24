@@ -262,7 +262,7 @@ class EarthquakeThresholdRule(BaseRule):
         direct = filters.get(source_id)
         if isinstance(direct, dict):
             min_mag = direct.get("min_magnitude", 0)
-            min_int = self._get_field(direct, "烈度", "min_intensity", default=0)
+            min_int = self._get_field(direct, "最小烈度", "烈度", "min_intensity", default=0)
             intensity = self._get_intensity(ctx)
             # OR逻辑：震级够 或 烈度够 即可推送
             mag_ok = (min_mag <= 0 or check_mag is None or check_mag >= min_mag)
@@ -278,7 +278,7 @@ class EarthquakeThresholdRule(BaseRule):
             if not isinstance(gf, dict):
                 continue
             min_mag = gf.get("min_magnitude", 0)
-            min_int = self._get_field(gf, "烈度", "min_intensity", default=0)
+            min_int = self._get_field(gf, "最小烈度", "烈度", "min_intensity", default=0)
             intensity = self._get_intensity(ctx)
             # OR逻辑：震级够 或 烈度够 即通过
             mag_ok = (min_mag <= 0 or check_mag is None or check_mag >= min_mag)

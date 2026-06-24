@@ -63,7 +63,7 @@
     "intensity_filter": {
       "enabled": true,
       "min_magnitude": 2.0,
-      "烈度": 4.0
+      "最小烈度": 4.0
     },
     "magnitude_only_filter": {
       "enabled": true,
@@ -72,7 +72,7 @@
     "global_quake_filter": {
       "enabled": true,
       "min_magnitude": 4.5,
-      "烈度": 5.0
+      "最小烈度": 5.0
     },
     "emsc_filter": {
       "enabled": true,
@@ -133,7 +133,7 @@
     "geonet_filter": {
       "enabled": true,
       "min_magnitude": 4.5,
-      "烈度": 5.0
+      "最小烈度": 5.0
     },
     "nrcan_filter": {
       "enabled": true,
