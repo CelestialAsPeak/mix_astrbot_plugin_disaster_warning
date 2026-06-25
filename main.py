@@ -690,15 +690,21 @@ class MixDisasterWarningPlugin(Star):
 
     async def _ws_message_handler(self, name: str, raw_data: str | bytes) -> None:
         """WebSocket 消息处理器 — 组级→源级路由。"""
-        logger.info(f"[WS] 收到消息: {name} ({len(raw_data) if isinstance(raw_data, (str,bytes)) else type(raw_data).__name__})")
-
-        # 统一转文本尝试 JSON 解析（需要提前解析以检查 initial_all）
+        # 统一转文本尝试 JSON 解析
         text = raw_data.decode("utf-8", errors="replace") if isinstance(raw_data, bytes) else raw_data
         data_for_check = None
         try:
             data_for_check = json.loads(text)
         except Exception:
             pass
+
+        # 日志：WS 消息摘要
+        extra = ""
+        if isinstance(data_for_check, dict):
+            extra = f" type={data_for_check.get('type','?')}"
+            if "source" in data_for_check:
+                extra += f" source={data_for_check['source']}"
+        logger.info(f"[WS] ← {name}{extra}")
 
         # initial_all 永远处理（不受静默期限制），直接入库不走推送
         if isinstance(data_for_check, dict) and name == "fan_studio" and data_for_check.get("type") == "initial_all":
@@ -767,7 +773,6 @@ class MixDisasterWarningPlugin(Star):
     async def _route_fan_studio(self, data: dict) -> None:
         """FAN Studio JSON 消息内部路由（兼容 initial_all 和 update）。"""
         msg_type = data.get("type", "unknown")
-        logger.info(f"[Fan] 路由消息 type={msg_type}, keys={list(data.keys())[:6]}")
 
         if msg_type == "initial_all":
             # initial_all 是 WebSocket 重连后的全量快照
@@ -789,10 +794,10 @@ class MixDisasterWarningPlugin(Star):
                                     stored += 1
                         except Exception:
                             pass
-            logger.info(f"[Fan] initial_all 入库: {stored} 条")
+            logger.info(f"[Fan] initial_all 入库: {stored} 条（静默期不推送）")
             return
 
-        # 心跳静默
+        # 心跳静默（不打日志，刷屏）
         if msg_type in ("heartbeat", "ping", "pong"):
             return
 
@@ -816,12 +821,14 @@ class MixDisasterWarningPlugin(Star):
                 if sid:
                     if sid == "china_weather_fanstudio":
                         return
+                    logger.info(f"[Fan] ← {sid}")
                     await self.signal_bus.emit(sid, payload)
                     return
 
             # 2. 按 payload 签名兜底（处理同族模糊源）
             sid = self._match_fan_by_signature(payload)
             if sid:
+                logger.info(f"[Fan] ← {sid}（签名匹配）")
                 await self.signal_bus.emit(sid, payload)
                 return
 
@@ -976,7 +983,14 @@ class MixDisasterWarningPlugin(Star):
             return
 
         # 有新事件 → 推送，成功后更新记录
-        logger.info(f"[HTTP] {source_id} 发现新事件: {eid}")
+        # 事件摘要日志（兼容 EewEvent/EarthquakeReport/TsunamiEvent）
+        ev = newest.event
+        mag = getattr(ev, "magnitude", None)
+        place = getattr(ev, "place_name", None) or getattr(ev, "region", None) or ""
+        occurred = getattr(ev, "occurred_at", None) or getattr(ev, "timestamp", None)
+        time_s = occurred.strftime("%H:%M:%S") if occurred else "?"
+        mag_s = f" M{mag:.1f}" if mag is not None else ""
+        logger.info(f"[HTTP] ← {source_id}: {time_s}{mag_s} {place}".strip())
         if self.pipeline:
             try:
                 await self.pipeline.handle(newest)

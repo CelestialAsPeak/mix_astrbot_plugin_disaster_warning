@@ -35,6 +35,78 @@ except ImportError:
     from pipeline.fusion import FusionResult, FusionOrchestrator
 
 
+def _summarize_envelope(envelope) -> str:
+    """从 EventEnvelope 提取关键信息用于日志 — 时间/地名/震级/烈度。"""
+    ev = envelope.event
+    src = envelope.source_id or "?"
+    if ev is None:
+        return f"[{src}] 空事件"
+
+    # 事件类型标签
+    etype = envelope.identity.event_type if envelope.identity else ""
+    if etype in ("earthquake_warning", "eew"):
+        tag = "⚠️EEW"
+    elif etype == "earthquake_report":
+        tag = "📊报告"
+    elif etype == "tsunami":
+        tag = "🌊海啸"
+    elif etype == "weather":
+        tag = "🌤天气"
+    elif etype == "typhoon":
+        tag = "🌀台风"
+    else:
+        tag = etype or "?"
+
+    # 公共字段
+    mag = getattr(ev, "magnitude", None)
+    place = getattr(ev, "place_name", None) or getattr(ev, "region", None) or ""
+    depth = getattr(ev, "depth", None)
+    occurred = getattr(ev, "occurred_at", None) or getattr(ev, "timestamp", None)
+
+    parts = [f"[{src}]", tag]
+
+    # 报次
+    report = getattr(ev, "serial", None) or getattr(ev, "report_num", None)
+    if report is not None:
+        parts.append(f"#{report}")
+
+    # 时间
+    if occurred:
+        try:
+            parts.append(occurred.strftime("%H:%M:%S"))
+        except Exception:
+            pass
+
+    # 震级
+    if mag is not None:
+        parts.append(f"M{mag:.1f}")
+
+    # 地名
+    if place:
+        parts.append(place)
+    else:
+        lat = getattr(ev, "latitude", None)
+        lon = getattr(ev, "longitude", None)
+        if lat is not None and lon is not None:
+            parts.append(f"({lat:.1f},{lon:.1f})")
+
+    # 深度
+    if depth is not None:
+        parts.append(f"{depth:.0f}km")
+
+    # 烈度
+    intensity = getattr(ev, "max_intensity", None) or getattr(ev, "mmi", None)
+    if intensity:
+        parts.append(f"烈度={intensity}")
+
+    # 海啸级别
+    level = getattr(ev, "level", None)
+    if level is not None and level > 0:
+        parts.append(f"海啸级别={level}")
+
+    return " ".join(parts)
+
+
 class EventPipeline:
     """事件处理流水线。"""
 
@@ -88,6 +160,7 @@ class EventPipeline:
             bool: 是否至少成功推送到一个群组
         """
         self.events_processed += 1
+        logger.info(f"[事件] {_summarize_envelope(envelope)}")
 
         # ── 1. 规则链过滤（全局规则） ──
         ctx = RuleContext(
