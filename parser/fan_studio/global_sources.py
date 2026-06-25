@@ -34,7 +34,7 @@ class FanEarthquakeParser(BaseParser):
         if self._is_heartbeat(raw):
             return []
 
-        event_id = to_str(raw.get("id")) or ""
+        event_id = to_str(raw.get("eventId")) or to_str(raw.get("id")) or ""
         if not event_id:
             return None
 

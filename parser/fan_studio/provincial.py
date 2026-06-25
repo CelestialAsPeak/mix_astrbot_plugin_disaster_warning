@@ -31,7 +31,7 @@ class ProvincialReportParser(BaseParser):
         if not isinstance(raw, dict):
             return None
 
-        event_id = to_str(raw.get("id")) or ""
+        event_id = to_str(raw.get("eventId")) or to_str(raw.get("id")) or ""
         if not event_id:
             return None
 

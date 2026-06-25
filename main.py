@@ -1922,6 +1922,49 @@ class MixDisasterWarningPlugin(Star):
     async def q_wnrl(self, e):
         async for r in self._quick_query(e, "funvisis_http", "FUNVISIS"): yield r
 
+    @filter.regex(r"^/httpstatus(?:\s|$)")
+    async def http_status_cmd(self, event: AstrMessageEvent):
+        """HTTP 轮询源状态一览。"""
+        lines = ["📡 HTTP 轮询源状态"]
+
+        if not self.http_poll_manager:
+            yield event.plain_result("❌ HTTP 轮询管理器未就绪")
+            return
+
+        pollers = self.http_poll_manager.get_status()
+        if not pollers:
+            yield event.plain_result("📡 没有注册的 HTTP 轮询器")
+            return
+
+        # 显示名映射（仅 HTTP 轮询源）
+        display_map = {
+            "funvisis_http": "FUNVISIS", "cenais_http": "CENAIS",
+            "geonet_http": "GeoNet", "nrcan_http": "NRCan",
+            "tmd_http": "TMD", "phivolcs_http": "PHIVOLCS",
+            "csnc_http": "CSNC", "usgs_weekly": "USGS周报",
+            "jma_wolfx_http": "JMA(Wolfx HTTP)", "jma_wolfx_info_http": "JMA情报(Wolfx HTTP)",
+            "jma_p2p_http": "JMA(P2P HTTP)", "jma_p2p_info_http": "JMA情报(P2P HTTP)",
+            "jma_tsunami_p2p_http": "JMA海啸(P2P HTTP)",
+        }
+
+        # 哪些源有成功返回数据
+        last_events = self._http_last_event  # {source_id: {event_id: ...}}
+        for name, info in pollers.items():
+            display = display_map.get(name, name)
+            running = info["running"]
+            interval = info["interval"]
+            has_data = "✅" if name in last_events else "⏳"
+            status = "🟢 运行中" if running else "🔴 已停止"
+            lines.append(f"  {has_data} {display} {status} ({interval}s)")
+            if name in last_events:
+                last_eid = last_events[name].get("event_id", "?")
+                lines.append(f"     最后事件: {last_eid}")
+
+        # WS → HTTP 备用关系提示
+        lines.append("")
+        lines.append("注: JMA/P2P/Wolfx HTTP 是 WebSocket 备用源，WS 正常时可能无数据")
+        yield event.plain_result("\n".join(lines))
+
     @filter.regex(r"^/(?:snet|s-net|S-Net)(?:\s|$)")
     async def q_snet(self, e):
         """S-Net 测站分布查询。

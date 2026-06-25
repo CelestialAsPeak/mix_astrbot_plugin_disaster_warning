@@ -128,6 +128,21 @@ class HttpPollManager:
         for poller in self._pollers.values():
             await poller.start()
 
+    def get_status(self) -> dict[str, dict]:
+        """返回所有轮询器状态。
+
+        Returns:
+            {name: {"running": bool, "url": str, "interval": int, "last_poll": str | None}, ...}
+        """
+        result = {}
+        for name, poller in self._pollers.items():
+            result[name] = {
+                "running": poller._running,
+                "url": poller.url,
+                "interval": poller.interval,
+            }
+        return result
+
     async def fetch_one(self, name: str) -> bool:
         """立即触发单个轮询器的请求（不等待定时周期），返回是否成功触发。"""
         poller = self._pollers.get(name)
