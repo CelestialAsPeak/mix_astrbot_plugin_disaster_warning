@@ -785,7 +785,7 @@ def present_p2p_eew_alert(event: EewEvent) -> str:
             lines.append(f"‖ {label}：")
             for name, arrival in items:
                 if arrival:
-                    lines.append(f"‖ {name}[{arrival}到達](UTC+9)")
+                    lines.append(f"‖ {name}[{arrival}到達]")
                 else:
                     lines.append(f"‖ {name}")
         lines.append("=" * 19)
