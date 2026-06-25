@@ -971,11 +971,21 @@ class MixDisasterWarningPlugin(Star):
             if self.database:
                 try:
                     await self.database.insert_envelope(newest)
-                    logger.info(f"[HTTP] {source_id} 首条已入库: {eid}")
+                    ev = newest.event
+                    mag = getattr(ev, "magnitude", None)
+                    place = getattr(ev, "place_name", None) or getattr(ev, "region", None) or ""
+                    occurred = getattr(ev, "occurred_at", None) or getattr(ev, "timestamp", None)
+                    ts = occurred.strftime("%H:%M:%S") if occurred else "?"
+                    mag_s = f" M{mag:.1f}" if mag is not None else ""
+                    logger.info(f"[HTTP] ← {source_id}: {ts}{mag_s} {place}（首条入库）".strip())
                 except Exception as ex:
                     logger.warning(f"[HTTP] {source_id} 首条入库失败: {ex}")
             else:
-                logger.info(f"[HTTP] {source_id} 首条已记录（不推送）: {eid}")
+                ev = newest.event
+                mag = getattr(ev, "magnitude", None)
+                place = getattr(ev, "place_name", None) or getattr(ev, "region", None) or ""
+                mag_s = f" M{mag:.1f}" if mag is not None else ""
+                logger.info(f"[HTTP] ← {source_id}:{mag_s} {place}（首条已记录不推送）".strip())
             return
 
         if eid == last.get("event_id"):
