@@ -62,6 +62,10 @@ class PushExecutionService:
         self.snet_renderer = snet_renderer
         self.gq_card_builder = gq_card_builder
         self.intensity_img_renderer = intensity_img_renderer
+        # JMA EEW 556 警报横幅图
+        self._jma_eew_banner = os.path.join(
+            os.path.dirname(__file__), "..", "resources", "images", "jma_eew_banner.jpg"
+        )
 
     async def _render_event_map(self, envelope: EventEnvelope) -> list[str] | None:
         """渲染震中地图（缩略图 + 细节图），返回 base64 列表。"""
@@ -230,6 +234,9 @@ class PushExecutionService:
                     if ev.magnitude is not None:
                         for p in self.intensity_img_renderer.render_both(ev.magnitude, ev.depth):
                             _img(p)
+                    # JMA 556 警报横幅图
+                    if envelope.source_id in ("jma_p2p", "jma_p2p_http"):
+                        _img(self._jma_eew_banner)
 
                 elif isinstance(envelope.event, EarthquakeReport) and self.intensity_img_renderer:
                     # 地震报告 → 震度+烈度图 + 方位图（不赶时间）

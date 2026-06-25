@@ -1945,6 +1945,47 @@ class MixDisasterWarningPlugin(Star):
     async def q_wnrl(self, e):
         async for r in self._quick_query(e, "funvisis_http", "FUNVISIS"): yield r
 
+    @filter.regex(r"^/556(?:\s|$)")
+    async def q_556(self, event: AstrMessageEvent):
+        """抓取 JMA 紧急地震速报（556）并推送。"""
+        try:
+            import aiohttp
+            import os, base64
+            url = "https://api.p2pquake.net/v2/history?codes=556&limit=1"
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as s:
+                async with s.get(url) as resp:
+                    if resp.status != 200:
+                        yield event.plain_result(f"❌ 556 API {resp.status}")
+                        return
+                    data = await resp.json()
+            try:
+                from .parser.registry import ParserRegistry
+            except ImportError:
+                from parser.registry import ParserRegistry
+            parser = ParserRegistry.get("jma_p2p_http")
+            if not parser:
+                yield event.plain_result("❌ 556解析器未注册")
+                return
+            envelopes = parser.parse_message(data) or []
+            if not envelopes:
+                yield event.plain_result("📡 当前无556警报")
+                return
+            env = envelopes[0]
+            from .message.presenters import present
+            text = present(env)
+            # 横幅图
+            banner = os.path.join(
+                os.path.dirname(__file__), "resources", "images", "jma_eew_banner.jpg"
+            )
+            if os.path.exists(banner):
+                with open(banner, "rb") as f:
+                    b64 = base64.b64encode(f.read()).decode()
+                yield event.chain_result([Plain(text), Image.fromBase64(b64)])
+            else:
+                yield event.plain_result(text)
+        except Exception as ex:
+            yield event.plain_result(f"❌ 556抓取失败: {ex}")
+
     @filter.regex(r"^/httpstatus(?:\s|$)")
     async def http_status_cmd(self, event: AstrMessageEvent):
         """HTTP 轮询源状态一览。"""
