@@ -228,14 +228,14 @@ class PushExecutionService:
                     # EEW → 只用震度+烈度图（本地缓存快，不用 Playwright 方位图）
                     ev = envelope.event
                     if ev.magnitude is not None:
-                        for p in self.intensity_img_renderer.render_both(ev.magnitude, ev.depth or 10.0):
+                        for p in self.intensity_img_renderer.render_both(ev.magnitude, ev.depth):
                             _img(p)
 
                 elif isinstance(envelope.event, EarthquakeReport) and self.intensity_img_renderer:
                     # 地震报告 → 震度+烈度图 + 方位图（不赶时间）
                     ev = envelope.event
                     if ev.magnitude is not None:
-                        for p in self.intensity_img_renderer.render_both(ev.magnitude, ev.depth or 10.0):
+                        for p in self.intensity_img_renderer.render_both(ev.magnitude, ev.depth):
                             _img(p)
                     map_b64_list = await self._render_event_map(envelope)
                     if map_b64_list:
