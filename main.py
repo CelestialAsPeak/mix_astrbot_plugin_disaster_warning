@@ -1016,19 +1016,19 @@ class MixDisasterWarningPlugin(Star):
         #    接入存在法律风险，故意不添加。如果你知道自己在做什么，
         #    可以自己在这里加上 icl_http 的 poller。
         POLLERS = {
-            "funvisis_http": ("http://www.funvisis.gob.ve/maravilla.json", 120, True),
-            "cenais_http": ("https://www.cenais.gob.cu/lastquake/php/lastweek.php", 120, True),
-            "geonet_http": ("https://api.geonet.org.nz/quake?MMI=-1", 30, False),
-            "nrcan_http": ("https://www.earthquakescanada.nrcan.gc.ca/cache/earthquakes/canada-30.xml", 60, True),
-            "tmd_http": ("https://earthquake.tmd.go.th/", 120, True),
-            "phivolcs_http": ("https://earthquake.phivolcs.dost.gov.ph/", 120, True),
-            "csnc_http": ("https://www.sismologia.cl/index.html", 120, True),
-            "usgs_weekly": ("https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_week.geojson", 300, False),
-            # Wolfx HTTP 备用（WS 失能时降级）
-            "jma_wolfx_http": ("https://api.wolfx.jp/jma_eew.json", 30, False),
+            "funvisis_http": ("http://www.funvisis.gob.ve/maravilla.json", 10, True),
+            "cenais_http": ("https://www.cenais.gob.cu/lastquake/php/lastweek.php", 10, True),
+            "geonet_http": ("https://api.geonet.org.nz/quake?MMI=-1", 10, False),
+            "nrcan_http": ("https://www.earthquakescanada.nrcan.gc.ca/cache/earthquakes/canada-30.xml", 10, True),
+            "tmd_http": ("https://earthquake.tmd.go.th/", 10, True),
+            "phivolcs_http": ("https://earthquake.phivolcs.dost.gov.ph/", 10, True),
+            "csnc_http": ("https://www.sismologia.cl/index.html", 10, True),
+            "usgs_weekly": ("https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_week.geojson", 10, False),
+            # Wolfx HTTP 备用
+            "jma_wolfx_http": ("https://api.wolfx.jp/jma_eew.json", 1, False),
             "jma_wolfx_info_http": ("https://api.wolfx.jp/jma_eqlist.json", 60, False),
-            # P2P HTTP 备用（WS 失能时降级）
-            "jma_p2p_http": ("https://api.p2pquake.net/v2/history?codes=556&limit=1", 30, False),
+            # P2P HTTP 备用
+            "jma_p2p_http": ("https://api.p2pquake.net/v2/history?codes=556&limit=1", 1, False),
             "jma_p2p_info_http": ("https://api.p2pquake.net/v2/jma/quake?limit=5", 60, False),
             "jma_tsunami_p2p_http": ("https://api.p2pquake.net/v2/history?codes=552&limit=1", 60, False),
         }
