@@ -210,8 +210,8 @@ class PushExecutionService:
                     # GlobalQuake 专属卡（含震中+震度烈度）
                     if self.intensity_img_renderer:
                         ev = envelope.event
-                        if ev.magnitude is not None:
-                            for p in self.intensity_img_renderer.render_both(ev.magnitude, ev.depth or 10.0):
+                        if ev.magnitude is not None and ev.depth is not None:
+                            for p in self.intensity_img_renderer.render_both(ev.magnitude, ev.depth):
                                 _img(p)
                     gq_b64 = await self._render_gq_card(envelope)
                     if gq_b64:
