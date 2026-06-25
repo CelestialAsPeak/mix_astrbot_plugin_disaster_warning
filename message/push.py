@@ -229,13 +229,25 @@ class PushExecutionService:
                             chain_components.append(Image.fromBase64(b64))
 
                 elif is_eew and self.intensity_img_renderer:
-                    # EEW → 震度+烈度图 + JMA 横幅（所有 JMA 源）
+                    # EEW → 震度+烈度图（本地缓存快，不用 Playwright 方位图）
                     ev = envelope.event
                     if ev.magnitude is not None:
-                        for p in self.intensity_img_renderer.render_both(ev.magnitude, ev.depth):
-                            _img(p)
-                    # JMA 警报横幅图（所有 JMA EEW 源）
-                    if envelope.source_id.startswith("jma_"):
+                        # JMA 源：震度用 JMA 提供的 max_intensity，烈度继续 CSIS 估算
+                        if ev.source_id.startswith("jma_") and getattr(ev, "max_intensity", None):
+                            s = self.intensity_img_renderer.render_shindo_actual(
+                                ev.max_intensity, "最大震度")
+                            if s:
+                                _img(s)
+                            i = self.intensity_img_renderer.render_intensity(
+                                ev.magnitude, ev.depth)
+                            if i:
+                                _img(i)
+                        else:
+                            for p in self.intensity_img_renderer.render_both(
+                                    ev.magnitude, ev.depth):
+                                _img(p)
+                    # JMA 556 警报横幅图
+                    if envelope.source_id in ("jma_p2p", "jma_p2p_http"):
                         _img(self._jma_eew_banner)
 
                 elif isinstance(envelope.event, EarthquakeReport) and self.intensity_img_renderer:
