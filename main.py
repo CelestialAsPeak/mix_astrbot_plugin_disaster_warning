@@ -38,6 +38,7 @@ try:
     from .message.browser import BrowserManager
     from .message.render.typhoon_map_renderer import TyphoonMapRenderer
     from .message.render.snet_map_renderer import SnetMapRenderer
+    from .message.render.hypo_renderer import HypoRenderer, parse_date_args
     from .message.notification import SystemNotificationService, NotificationCenter
     from .storage.database import DatabaseManager
     from .storage.stats import StatisticsManager
@@ -62,6 +63,7 @@ except ImportError:
     from message.browser import BrowserManager
     from message.render.typhoon_map_renderer import TyphoonMapRenderer
     from message.render.snet_map_renderer import SnetMapRenderer
+    from message.render.hypo_renderer import HypoRenderer, parse_date_args
     from message.notification import SystemNotificationService, NotificationCenter
     from storage.database import DatabaseManager
     from storage.stats import StatisticsManager
@@ -1531,12 +1533,6 @@ class MixDisasterWarningPlugin(Star):
     @filter.regex(r"^/(?:震央|hypo)\s*(.*)$")
     async def hypo_cmd(self, event: AstrMessageEvent):
         """震央分布图。"""
-        import importlib
-        from message.render import hypo_renderer as _hr_mod
-        importlib.reload(_hr_mod)
-        HypoRenderer = _hr_mod.HypoRenderer
-        parse_date_args = _hr_mod.parse_date_args
-
         try:
             raw = (event.message_str or "").strip()
             arg = ""
