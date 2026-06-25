@@ -243,6 +243,11 @@ class IntensityImageRenderer:
 
     def render_shindo(self, mag: float, depth: float = 10.0) -> str | None:
         """渲染震度图片。"""
+        if depth is None:
+            return self._render_single(
+                self._cache_key_actual("shindo_unknown", "不明"),
+                "预估最大震度", "不明", (120, 120, 120),
+            )
         csis = _estimate_csis(mag, depth)
         shindo_str = _csis_to_shindo(csis)
         color = _get_shindo_color(shindo_str)
@@ -251,6 +256,11 @@ class IntensityImageRenderer:
 
     def render_intensity(self, mag: float, depth: float = 10.0) -> str | None:
         """渲染烈度图片（罗马数字）。"""
+        if depth is None:
+            return self._render_single(
+                self._cache_key_actual("intensity_unknown", "不明"),
+                "预估最大烈度", "不明", (120, 120, 120),
+            )
         csis = _estimate_csis(mag, depth)
         val = max(1, min(12, int(round(csis))))
         roman = _ROMAN[val - 1]
