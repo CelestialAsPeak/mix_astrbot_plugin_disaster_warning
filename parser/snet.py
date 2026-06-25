@@ -333,7 +333,6 @@ class SnetParser(BaseParser):
             latitude=top["lat"],
             longitude=top["lon"],
             place_name="日本海沟 S-Net 海底观测网",
-            magnitude=max_shindo,
             raw={"stations": all_stations, "triggered": triggered, "timestamp": timestamp},
         )
 

@@ -195,6 +195,10 @@ class EarthquakeThresholdRule(BaseRule):
     }
 
     def evaluate(self, ctx: RuleContext) -> RuleDecision:
+        # SNET 是震度监测，非地震，已在 _fetch_snet_once() 中用 min_shindo 过滤，跳过阈值检查
+        if ctx.source_id in ("snet", "snet_http"):
+            return RuleDecision.accept(rule_name=self.name)
+
         if not isinstance(ctx.event, (EewEvent, EarthquakeReport)):
             return RuleDecision.accept(rule_name=self.name)
 

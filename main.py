@@ -923,7 +923,7 @@ class MixDisasterWarningPlugin(Star):
             self.ws_manager.add_connection(name, cfg["url"], cfg.get("backup", ""))
 
     async def _handle_http_poll_result(self, source_id: str, raw_data: Any) -> None:
-        """HTTP 轮询结果处理：取最新一条，首条不推，变化才推。"""
+        """HTTP 轮询结果处理：追踪所有 event_id，首次入库不推，新事件再推。"""
         import re
         from datetime import datetime, timezone
         try:
@@ -946,71 +946,60 @@ class MixDisasterWarningPlugin(Star):
             logger.info(f"[HTTP] {source_id} 解析结果为空列表")
             return
 
-        # 按发生/发布时间降序排序，确保取到最新一条
-        _epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
-        try:
-            def _event_time(e):
-                ev = e.event
-                t = getattr(ev, "occurred_at", None) or getattr(ev, "timestamp", None)
-                return t if t is not None else _epoch
-            envelopes.sort(key=_event_time, reverse=True)
-        except TypeError:
-            pass
-        newest = envelopes[0]
-        eid = newest.identity.event_id
+        # 该源所有见过的事件 ID（set）
+        seen_key = f"{source_id}:seen"
+        seen: set = self._http_last_event.get(seen_key)
+        is_first = seen is None
+        if seen is None:
+            seen = set()
+            self._http_last_event[seen_key] = seen
 
-        # ── NRCan md5 回退警告 ──
-        if source_id == "nrcan_http" and len(eid) == 12 and not re.search(r'\d{4,}', eid):
-            logger.warning(f"[HTTP] nrcan_http event_id 疑似 md5 回退: {eid}，注意 ID 可能不稳定")
+        new_envs = []
+        for env in envelopes:
+            eid = env.identity.event_id
+            if eid not in seen:
+                seen.add(eid)
+                new_envs.append(env)
 
-        # 比较上次推送过的 ID
-        last = self._http_last_event.get(source_id)
-        if last is None:
-            # 首次启动：记录 ID + 入库（不推送）
-            self._http_last_event[source_id] = {"event_id": eid}
+        if not new_envs:
+            return
+
+        if is_first:
+            stored = 0
             if self.database:
-                try:
-                    await self.database.insert_envelope(newest)
-                    ev = newest.event
-                    mag = getattr(ev, "magnitude", None)
-                    place = getattr(ev, "place_name", None) or getattr(ev, "region", None) or ""
-                    occurred = getattr(ev, "occurred_at", None) or getattr(ev, "timestamp", None)
-                    ts = occurred.strftime("%H:%M:%S") if occurred else "?"
-                    mag_s = f" M{mag:.1f}" if mag is not None else ""
-                    logger.info(f"[HTTP] ← {source_id}: {ts}{mag_s} {place}（首条入库）".strip())
-                except Exception as ex:
-                    logger.warning(f"[HTTP] {source_id} 首条入库失败: {ex}")
-            else:
-                ev = newest.event
+                for env in new_envs:
+                    try:
+                        await self.database.insert_envelope(env)
+                        stored += 1
+                    except Exception:
+                        pass
+            logger.info(f"[HTTP] << {source_id}: {len(new_envs)} 条入库{'（首条不推送）' if stored else '（无DB）'}")
+        else:
+            pushed = 0
+            for env in new_envs:
+                ev = env.event
                 mag = getattr(ev, "magnitude", None)
                 place = getattr(ev, "place_name", None) or getattr(ev, "region", None) or ""
+                occurred = getattr(ev, "occurred_at", None) or getattr(ev, "timestamp", None)
+                time_s = occurred.strftime("%H:%M:%S") if occurred else "?"
                 mag_s = f" M{mag:.1f}" if mag is not None else ""
-                logger.info(f"[HTTP] ← {source_id}:{mag_s} {place}（首条已记录不推送）".strip())
-            return
+                if self.pipeline:
+                    try:
+                        await self.pipeline.handle(env)
+                        pushed += 1
+                        logger.info(f"[HTTP] << {source_id}: {time_s}{mag_s} {place}".strip())
+                    except Exception as ex:
+                        logger.error(f"[HTTP] {source_id} {env.identity.event_id} pipeline.handle 失败: {ex}")
+            if pushed:
+                logger.info(f"[HTTP] << {source_id}: {pushed}/{len(new_envs)} 条推送")
 
-        if eid == last.get("event_id"):
-            # 没有变化，跳过（debug 级别避免刷日志）
-            return
-
-        # 有新事件 → 推送，成功后更新记录
-        # 事件摘要日志（兼容 EewEvent/EarthquakeReport/TsunamiEvent）
-        ev = newest.event
-        mag = getattr(ev, "magnitude", None)
-        place = getattr(ev, "place_name", None) or getattr(ev, "region", None) or ""
-        occurred = getattr(ev, "occurred_at", None) or getattr(ev, "timestamp", None)
-        time_s = occurred.strftime("%H:%M:%S") if occurred else "?"
-        mag_s = f" M{mag:.1f}" if mag is not None else ""
-        logger.info(f"[HTTP] ← {source_id}: {time_s}{mag_s} {place}".strip())
-        if self.pipeline:
-            try:
-                await self.pipeline.handle(newest)
-            except Exception as ex:
-                logger.error(f"[HTTP] {source_id} pipeline.handle 失败: {ex}")
-                return  # 不更新 last_event_id，下次轮询重试
-
-        # 推送成功后才更新记录
-        self._http_last_event[source_id] = {"event_id": eid}
-
+        # NRCan md5 回退警告
+        if source_id == "nrcan_http":
+            for env in new_envs:
+                eid = env.identity.event_id
+                if len(eid) == 12 and not re.search(r"\d{4,}", eid):
+                    logger.warning(f"[HTTP] nrcan_http event_id 疑似 md5 回退: {eid}")
+                    break
     def _setup_http_pollers(self, sources: dict, router: MessageRouter):
         # ⚠️ ICL（成都高新减灾研究所）属于未公开/非官方数据源，
         #    接入存在法律风险，故意不添加。如果你知道自己在做什么，
