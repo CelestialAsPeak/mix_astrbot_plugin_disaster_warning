@@ -329,10 +329,14 @@ def present_eew(event: EewEvent) -> str:
         intensity_label = "最大震度" if (is_jma or is_cwa) else "最大烈度"
         lines.append(_field(intensity_label, event.max_intensity))
     # 预估烈度/震度（CWA/JMA 除外）
-    if not _exclude_intensity_estimate(event.source_id) and event.magnitude is not None and event.depth is not None:
-        csis = _estimate_csis(event.magnitude, event.depth)
-        lines.append(_field("预估最大烈度", _format_intensity(csis)))
-        lines.append(_field("预估最大震度", _csis_to_shindo(csis)))
+    if not _exclude_intensity_estimate(event.source_id) and event.magnitude is not None:
+        if event.depth is not None:
+            csis = _estimate_csis(event.magnitude, event.depth)
+            lines.append(_field("预估最大烈度", _format_intensity(csis)))
+            lines.append(_field("预估最大震度", _csis_to_shindo(csis)))
+        else:
+            lines.append(_field("预估最大烈度", "不明"))
+            lines.append(_field("预估最大震度", "不明"))
     # GQ 特有数据
     raw = event.raw if isinstance(event.raw, dict) else {}
     su = raw.get("stations_used")
@@ -435,10 +439,14 @@ def present_earthquake_report(event: EarthquakeReport) -> str:
         if coords:
             lines.append(_field("经纬度", coords))
         # 预估烈度/震度（CWA/JMA 除外）
-        if not _exclude_intensity_estimate(event.source_id) and event.magnitude is not None and event.depth is not None:
-            csis = _estimate_csis(event.magnitude, event.depth)
-            lines.append(_field("预估最大烈度", _format_intensity(csis)))
-            lines.append(_field("预估最大震度", _csis_to_shindo(csis)))
+        if not _exclude_intensity_estimate(event.source_id) and event.magnitude is not None:
+            if event.depth is not None:
+                csis = _estimate_csis(event.magnitude, event.depth)
+                lines.append(_field("预估最大烈度", _format_intensity(csis)))
+                lines.append(_field("预估最大震度", _csis_to_shindo(csis)))
+            else:
+                lines.append(_field("预估最大烈度", "不明"))
+                lines.append(_field("预估最大震度", "不明"))
 
     # ── JMA 震度观测点：按震度分组、按地区合并（对齐 CAPQuake Qt） ──
     if is_jma_p2p and event.intensity_points:
