@@ -58,7 +58,7 @@ except ImportError:
     from broker.websocket import WebSocketManager
     from broker.http_poller import HttpPollManager
     from message.push import SessionSender, PushExecutionService, PushOrchestrator
-    from domain.models import EewEvent, EventEnvelope
+    from domain.models import EewEvent, EarthquakeReport, EventEnvelope
     from message.presenters import present, present_eew, present_earthquake_report, WEATHER_TYPE_MAP, LEVEL_COLORS
     from message.browser import BrowserManager
     from message.render.typhoon_map_renderer import TyphoonMapRenderer
