@@ -46,10 +46,14 @@ class BanWeatherRule(BaseRule):
 # ─── 1. 事件时间规则 ───
 
 class EventTimeRule(BaseRule):
-    """检查事件时间是否在有效范围内（避免过期事件推送）。"""
+    """检查事件时间是否在有效范围内（避免过期事件推送）。
+
+    注：部分数据源（如 FUNVISIS）返回列表型数据，事件可能跨越数天。
+    放宽过期限制到 3 天，避免旧事件被误拦。
+    """
 
     name = "event_time"
-    MAX_AGE_SECONDS = 3600  # 1小时以上的事件忽略
+    MAX_AGE_SECONDS = 259200  # 3天（原 3600=1h，放宽后适配 FUNVISIS 等列表源）
 
     def evaluate(self, ctx: RuleContext) -> RuleDecision:
         event = ctx.event
@@ -60,6 +64,13 @@ class EventTimeRule(BaseRule):
                 from datetime import timezone
                 occurred = occurred.astimezone(timezone.utc).replace(tzinfo=None)
             age = (datetime.utcnow() - occurred).total_seconds()
+            # 未来事件（age < 0）：可能是时区转换异常，放行并打警告
+            if age < 0:
+                logger.warning(
+                    f"[EventTime] 事件时间 {event.occurred_at} 在未来 ({age:.0f}s)，"
+                    f"可能是时区转换异常，已放行"
+                )
+                age = 0
             if age > self.MAX_AGE_SECONDS:
                 return RuleDecision.reject(
                     f"事件时间 {event.occurred_at} 已过期 ({age:.0f}s > {self.MAX_AGE_SECONDS}s)",

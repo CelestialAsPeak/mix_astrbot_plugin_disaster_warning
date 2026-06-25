@@ -173,12 +173,12 @@ class EventPipeline:
             decision = rule.evaluate(ctx)
             if not decision.accepted:
                 self.events_filtered += 1
-                logger.debug(f"[Pipeline] 事件 {envelope.id} 被全局规则过滤: {decision.reason}")
+                logger.info(f"[Pipeline] ❌ 事件 {envelope.id} 不满足推送条件（全局规则过滤: {decision.reason}）")
                 return False
 
         # ── 2. 去重检查 ──
         if self._dedup.is_duplicate(envelope):
-            logger.debug(f"[Pipeline] 事件 {envelope.id} 重复，跳过")
+            logger.info(f"[Pipeline] ❌ 事件 {envelope.id} 不满足推送条件（重复，跳过）")
             return False
         self._dedup.mark_processed(envelope)
 
@@ -187,7 +187,7 @@ class EventPipeline:
             try:
                 fusion_result = await self._fusion.intercept(envelope)
                 if fusion_result == FusionResult.DEFERRED:
-                    logger.debug(f"[Pipeline] 事件 {envelope.id} 已由融合接管")
+                    logger.info(f"[Pipeline] ✅ 事件 {envelope.id} 满足推送条件（已由融合接管）")
                     self.events_pushed += 1
                     if self.stats_manager:
                         try:
@@ -201,7 +201,7 @@ class EventPipeline:
                             pass
                     return True
                 if fusion_result == FusionResult.SKIP:
-                    logger.debug(f"[Pipeline] 事件 {envelope.id} 被融合跳过（副源）")
+                    logger.info(f"[Pipeline] ❌ 事件 {envelope.id} 不满足推送条件（融合跳过/副源）")
                     return False
             except Exception as e:
                 logger.error(f"[Pipeline] 融合处理异常（降级为正常推送): {e}")
@@ -215,6 +215,7 @@ class EventPipeline:
 
         # 获取群组列表
         groups = self._resolve_groups(target_sessions)
+        logger.info(f"[Pipeline] 群组解析结果: {[(gid, len(ss)) for gid, ss in groups]}")
 
         for group_id, sessions in groups:
             if not sessions:
@@ -250,8 +251,8 @@ class EventPipeline:
                 ctx2 = RuleContext(envelope=envelope, config=group_config)
                 d = rule.evaluate(ctx2)
                 if not d.accepted:
-                    logger.debug(
-                        f"[Pipeline] 群 {group_id} 不满足阈值: {d.reason}"
+                    logger.info(
+                        f"[Pipeline] ❌ 群 {group_id} 不满足推送条件（阈值过滤: {d.reason}）"
                     )
                     group_accepted = False
                     break
@@ -270,13 +271,20 @@ class EventPipeline:
                     if r:
                         push_result = True
                         any_group_pushed = True
-                        logger.debug(f"[Pipeline] 推送到群 {group_id} 成功")
+                        logger.info(f"[Pipeline] ✅ 群 {group_id} 满足推送条件，已推送")
                 except Exception as e:
                     logger.error(f"[Pipeline] 群 {group_id} 推送失败: {e}")
 
         # 事件级计数器（无论推送多少群组，只计一次）
         if any_group_pushed:
             self.events_pushed += 1
+
+        # 最终判定汇总
+        if any_group_pushed:
+            groups_str = ", ".join(g for g, _ in groups if g in [gg for gg, _ in groups])
+            logger.info(f"[Pipeline] ✅ 事件 {envelope.id} 推送完成")
+        else:
+            logger.info(f"[Pipeline] ❌ 事件 {envelope.id} 未被任何群组接受（阈值过滤或无可推群组）")
 
         # ── 4. 统计记录 ──
         if self.stats_manager:
@@ -337,6 +345,19 @@ class EventPipeline:
                     if isinstance(sessions, list) and sessions:
                         result.append((gid, sessions))
             if result:
+                return result
+
+        # 如果 session_manager 没返回群组，直接从自身 config 读（兜底）
+        cfg_groups = self.config.get("groups", {})
+        if isinstance(cfg_groups, dict) and cfg_groups:
+            result = []
+            for gid, gcfg in cfg_groups.items():
+                if isinstance(gcfg, dict) and gcfg.get("enabled", True):
+                    sessions = gcfg.get("sessions", [])
+                    if isinstance(sessions, list) and sessions:
+                        result.append((gid, sessions))
+            if result:
+                logger.info(f"[Pipeline] 从 config 直接读取群组: {[g for g,_ in result]}")
                 return result
 
         # 兜底：直接从 config 读 target_sessions

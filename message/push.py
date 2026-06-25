@@ -66,6 +66,9 @@ class PushExecutionService:
         self._jma_eew_banner = os.path.join(
             os.path.dirname(__file__), "..", "resources", "images", "jma_eew_banner.jpg"
         )
+        # NHK 图缓存: {source_id|event_id → [b64, b64] | None} 避免重复爆破
+        self._nhk_cache: dict[str, list[str] | None] = {}
+        self._nhk_cache_max = 128
 
     async def _render_event_map(self, envelope: EventEnvelope) -> list[str] | None:
         """渲染震中地图（缩略图 + 细节图），返回 base64 列表。"""
@@ -149,6 +152,161 @@ class PushExecutionService:
                 return [b64]
         except Exception as e:
             logger.error(f"[Push] S-Net 测站图渲染失败: {e}")
+        return None
+
+    async def _fetch_nhk_report_images(self, envelope: EventEnvelope) -> list[str] | None:
+        """下载 JMA NHK 地震报告双图（概况图 + 区域图）。
+
+        URL 模式:
+          概况图: JS00cwA0{发震_yyMMddHHmmss}_{图片_YYYYmmddHHMMss}.jpg
+          区域图: JS00clA0{发震_yyMMddHHmmss}_{图片_YYYYmmddHHMMss}.jpg
+
+        策略:
+          - issue.time 确定图片时间戳 ✅ 精确匹配
+          - earthquake.time 确定事件分钟（缺秒）
+          - 每秒 5 个 HEAD 扫秒数，15s 超时回退
+        """
+        import asyncio
+        from ..utils.time import parse_ts
+
+        event = envelope.event
+        if not isinstance(event, EarthquakeReport):
+            return None
+        # 只处理 JMA P2P 报告源
+        if event.source_id not in ("jma_p2p_info", "jma_p2p_info_http"):
+            return None
+
+        raw = event.raw if isinstance(event.raw, dict) else {}
+        if not raw:
+            return None
+
+        # ── 缓存命中检查 ──
+        cache_key = f"{event.source_id}|{event.event_id}"
+        cached = self._nhk_cache.get(cache_key)
+        if cached is not None:
+            if cached:
+                logger.info(f"[NHK] 缓存命中: {cache_key} ({len(cached)} 图)")
+                return list(cached)
+            logger.debug(f"[NHK] 缓存命中（无图）: {cache_key}")
+            return None
+
+        # ScalePrompt（震度速報）也试 NHK 图（NHK 可能有），失败不回退 PetalMap
+        # （无经纬度，_render_event_map 自身会跳过）
+        issue = raw.get("issue", {}) or {}
+
+        # ── 提取 earthquake.time（事件基准分钟）──
+        eq_raw = raw.get("earthquake", {}) or {}
+        eq_time_str = eq_raw.get("time") if isinstance(eq_raw, dict) else None
+        if not eq_time_str:
+            return None
+        dt_eq = parse_ts(eq_time_str)
+        if dt_eq is None:
+            return None
+        base_ymdhms = dt_eq.strftime("%y%m%d%H%M")  # YYMMDDHHmm（不含秒）
+
+        # ── 提取 issue.time（图片时间戳）──
+        iss_time_str = issue.get("time") if isinstance(issue, dict) else None
+        if not iss_time_str:
+            return None
+        dt_iss = parse_ts(iss_time_str)
+        if dt_iss is None:
+            return None
+        img_ts = dt_iss.strftime("%Y%m%d%H%M%S")
+
+        # ── 秒数地毯式扫描（5 HEAD/sec, 15s 超时）──
+        logger.info(f"[NHK] 开始爆破 — 基准={base_ymdhms}XX 图片时间戳={img_ts}")
+        found_sec = await self._scan_nhk_sec(base_ymdhms, img_ts)
+        if found_sec is None:
+            logger.warning(f"[NHK] 爆破失败 — 全部 404，回退 PetalMap")
+            self._nhk_cache[cache_key] = None
+            return None
+
+        logger.info(f"[NHK] 爆破成功！时间戳: {base_ymdhms}{found_sec:02d}_{img_ts}")
+
+        # ── 双图下载 ──
+        event_time = f"{base_ymdhms}{found_sec:02d}"
+        base_url = "https://news.web.nhk/sokuho/jishin/data/"
+        urls = [
+            f"{base_url}JS00cwA0{event_time}_{img_ts}.jpg",
+            f"{base_url}JS00clA0{event_time}_{img_ts}.jpg",
+        ]
+
+        import aiohttp
+        b64_list = []
+        async with aiohttp.ClientSession() as session:
+            for i, url in enumerate(urls, 1):
+                label = "概况图" if i == 1 else "区域图"
+                try:
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                        if resp.status == 200:
+                            data = await resp.read()
+                            b64_list.append(base64.b64encode(data).decode())
+                            logger.info(f"[NHK] {label}下载成功 ({len(data)} bytes)")
+                except Exception as e:
+                    logger.warning(f"[NHK] {label}下载失败: {e}")
+
+        if len(b64_list) == 2:
+            # 写入缓存，控制大小
+            self._nhk_cache[cache_key] = list(b64_list)
+            if len(self._nhk_cache) > self._nhk_cache_max:
+                stale = next(iter(self._nhk_cache))
+                del self._nhk_cache[stale]
+            return b64_list
+        # 双图不全仍缓存为 None 避免重试
+        if b64_list:
+            self._nhk_cache[cache_key] = None
+        logger.warning(f"[NHK] 双图仅拿到 {len(b64_list)}/2，丢弃")
+        return None
+
+    async def _scan_nhk_sec(self, base_ymdhms: str, img_ts: str, timeout: int = 15) -> int | None:
+        """HEAD 地毯扫秒数 (5/sec, 最多 15s)。"""
+        import aiohttp, asyncio, time as _time
+
+        BATCH = 5
+        start = _time.time()
+        deadline = start + timeout
+        total_tried = 0
+
+        async def _head(session, sec, batch_idx):
+            url = (f"https://news.web.nhk/sokuho/jishin/data/"
+                   f"JS00cwA0{base_ymdhms}{sec:02d}_{img_ts}.jpg")
+            try:
+                async with session.head(url, timeout=aiohttp.ClientTimeout(total=3)) as resp:
+                    ok = resp.status == 200
+                    return (sec, ok, batch_idx)
+            except Exception:
+                return (sec, False, batch_idx)
+
+        async with aiohttp.ClientSession() as session:
+            for batch_start in range(0, 60, BATCH):
+                now = _time.time()
+                if now >= deadline:
+                    tried = min(total_tried + BATCH, 60)
+                    logger.warning(f"[NHK] ⏰ 超时 ({timeout}s) — 已试 {tried}/60")
+                    return None
+
+                batch = list(range(batch_start, min(batch_start + BATCH, 60)))
+                batch_idx = batch_start // BATCH + 1
+                sec_str = ",".join(f"{s:02d}" for s in batch)
+                total_tried += len(batch)
+                logger.info(f"[NHK] 正在爆破NHK图片爬取({total_tried}/60) 批次#{batch_idx}: {sec_str}")
+
+                tasks = [_head(session, s, batch_idx) for s in batch]
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+
+                hit_secs = []
+                for r in results:
+                    if isinstance(r, tuple) and len(r) >= 2:
+                        if r[1]:
+                            elapsed = _time.time() - start
+                            logger.info(f"[NHK] ✅ 爆破成功！时间戳: {base_ymdhms}{r[0]:02d}_{img_ts} (耗时{elapsed:.1f}s)")
+                            return r[0]
+
+                # 限速: 确保每秒不超过 BATCH 个
+                elapsed = _time.time() - now
+                if elapsed < 1.0:
+                    await asyncio.sleep(1.0 - elapsed)
+
         return None
 
     async def _render_gq_card(self, envelope: EventEnvelope) -> str | None:
@@ -251,15 +409,31 @@ class PushExecutionService:
                         _img(self._jma_eew_banner)
 
                 elif isinstance(envelope.event, EarthquakeReport) and self.intensity_img_renderer:
-                    # 地震报告 → 震度+烈度图 + 方位图（不赶时间）
                     ev = envelope.event
-                    if ev.magnitude is not None:
-                        for p in self.intensity_img_renderer.render_both(ev.magnitude, ev.depth):
-                            _img(p)
-                    map_b64_list = await self._render_event_map(envelope)
-                    if map_b64_list:
-                        for b64 in map_b64_list:
-                            chain_components.append(Image.fromBase64(b64))
+                    # ── JMA 报告源：用 NHK 双图替代 Playwright 双图 ──
+                    if ev.source_id in ("jma_p2p_info", "jma_p2p_info_http"):
+                        if ev.magnitude is not None:
+                            for p in self.intensity_img_renderer.render_both(ev.magnitude, ev.depth):
+                                _img(p)
+                        nhk_b64 = await self._fetch_nhk_report_images(envelope)
+                        if nhk_b64:
+                            for b64 in nhk_b64:
+                                chain_components.append(Image.fromBase64(b64))
+                        else:
+                            # NHK 失败，回退 PetalMap 双图
+                            map_b64_list = await self._render_event_map(envelope)
+                            if map_b64_list:
+                                for b64 in map_b64_list:
+                                    chain_components.append(Image.fromBase64(b64))
+                    else:
+                        # 非 JMA 源：震度+烈度图 + 方位图（原逻辑）
+                        if ev.magnitude is not None:
+                            for p in self.intensity_img_renderer.render_both(ev.magnitude, ev.depth):
+                                _img(p)
+                        map_b64_list = await self._render_event_map(envelope)
+                        if map_b64_list:
+                            for b64 in map_b64_list:
+                                chain_components.append(Image.fromBase64(b64))
 
                 else:
                     # 其他 → 震中方位图

@@ -141,7 +141,10 @@ class FunvisisParser(BaseParser):
 
     @staticmethod
     def _parse_datetime(date_str: str, time_str: str) -> datetime | None:
-        """解析日期时间。date_str: DD-MM-YYYY, time_str: HH:MM (VET, UTC-4)"""
+        """解析日期时间。date_str: DD-MM-YYYY, time_str: HH:MM (VET, UTC-4)
+
+        返回 naive UTC datetime（不含 tzinfo），统一其他 parser 的存储约定。
+        """
         if not date_str or not time_str:
             return None
         try:
@@ -154,7 +157,9 @@ class FunvisisParser(BaseParser):
                 return None
             hour, minute = int(time_parts[0]), int(time_parts[1])
             dt = datetime(year, month, day, hour, minute, tzinfo=FunvisisParser.VET_TZ)
-            return dt.astimezone(timezone.utc)
+            utc_dt = dt.astimezone(timezone.utc)
+            # 返回 naive UTC，统一 EventTimeRule 的存储约定
+            return utc_dt.replace(tzinfo=None)
         except (ValueError, TypeError):
             return None
 

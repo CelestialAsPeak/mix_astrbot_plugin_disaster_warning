@@ -307,11 +307,52 @@ class MixDisasterWarningPlugin(Star):
             validated = ConfigValidator.validate(dict(self.config))
             self.config.update(validated)
 
+            # 确保 groups 从 JSON 配置文件加载（AstrBot 可能只塞了 default 群组）
+            _cfg_groups = self.config.get("groups", {})
+            logger.info(f"[Mix_DBG] groups 原始值: type={type(_cfg_groups).__name__} value={_cfg_groups}")
+            _has_only_default = (
+                not isinstance(_cfg_groups, dict)
+                or not _cfg_groups
+                or (len(_cfg_groups) == 1 and "default" in _cfg_groups)
+            )
+            logger.info(f"[Mix_DBG] _has_only_default={_has_only_default}")
+            if _has_only_default:
+                try:
+                    import json
+                    # 优先查 AppData 生产配置，兜底 .astrbot 开发配置
+                    _cfg_candidates = [
+                        Path(self._plugin_root).parent.parent.parent.parent / "AppData" / "Local" / "AstrBot" / "data" / "config" / "mix_astrbot_plugin_disaster_warning_config.json",
+                        Path(self._plugin_root).parent.parent / "config" / "mix_astrbot_plugin_disaster_warning_config.json",
+                    ]
+                    _loaded = False
+                    for _cfg_path in _cfg_candidates:
+                        logger.info(f"[Mix_DBG] 尝试配置路径: {_cfg_path}")
+                        if _cfg_path.exists():
+                            logger.info(f"[Mix_DBG] 配置文件存在，读取中...")
+                            with open(_cfg_path, encoding="utf-8-sig") as _f:
+                                _file_cfg = json.load(_f)
+                            _file_groups = _file_cfg.get("groups", {})
+                            logger.info(f"[Mix_DBG] 文件中 groups: {_file_groups}")
+                            if isinstance(_file_groups, dict) and _file_groups:
+                                _named = {k: v for k, v in _file_groups.items() if k != "default"}
+                                if _named:
+                                    self.config.update({"groups": _file_groups})
+                                    logger.info(f"[Mix] 从文件加载 groups: {list(_file_groups.keys())}")
+                                    _loaded = True
+                                    break
+                    if not _loaded:
+                        logger.warning(f"[Mix] 所有配置路径均未找到命名群组，仍使用 default")
+                except Exception as _e:
+                    logger.warning(f"[Mix] 无法从文件加载 groups: {_e}")
+
             self.database = DatabaseManager(self._get_storage_path() / "events.db")
             await self.database.initialize()
 
             self.stats_manager = StatisticsManager(dict(self.config))
             self.session_config_manager = SessionConfigManager(dict(self.config))
+            # 确认 groups 是否加载成功
+            _loaded_groups = self.session_config_manager.list_groups()
+            logger.info(f"[Mix] SessionConfigManager 群组: {list(_loaded_groups.keys())}")
             self.notification_center = NotificationCenter()
 
             await self.browser_manager.initialize()
@@ -362,6 +403,7 @@ class MixDisasterWarningPlugin(Star):
                 snet_renderer=self._snet_renderer, gq_card_builder=self._gq_card_builder,
                 intensity_img_renderer=self._intensity_img_renderer,
             )
+            self._push_svc = push_svc
             self._orchestrator = PushOrchestrator(dict(self.config), push_svc.execute_push, sender=session_sender)
 
             # 融合编排器（需要在 pipeline 之前创建，因为 pipeline 依赖它）
@@ -1772,7 +1814,23 @@ class MixDisasterWarningPlugin(Star):
 
     @filter.regex(r"^/jma(?:\s|$)")
     async def q_jma(self, e):
-        """JMA 综合查询 — EEW + 地震情报 + 海啸。"""
+        """JMA 查询 — /jma = P2P JMA地震情报, /jma all = 综合概览。"""
+        raw_text = e.message_str if hasattr(e, 'message_str') else str(e.message_obj)
+        parts = raw_text.strip().split()
+        args = parts[-1] if len(parts) >= 2 else ""
+
+        if args in ("all", "综合", "alll"):
+            # /jma all → 综合概览
+            async for r in self._jma_overview(e):
+                yield r
+            return
+        # /jma → 直接调 P2P 551 API 拿最新日本地震情报
+        async for r in self._jma_live_query(e):
+            yield r
+        return
+
+    async def _jma_overview(self, e):
+        """JMA 综合概览 — EEW + 地震情报 + 海啸。"""
         lines = ["📡 JMA 日本气象厅综合"]
         lines.append(_SEPARATOR)
 
@@ -1829,6 +1887,106 @@ class MixDisasterWarningPlugin(Star):
 
         lines.append(_SEPARATOR)
         yield e.plain_result("\n".join(lines))
+
+    async def _jma_live_query(self, e):
+        """直接调 P2P 551 API，跳过 Foreign（遠地地震）。"""
+        import aiohttp
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as s:
+                async with s.get("https://api.p2pquake.net/v2/jma/quake?limit=5") as resp:
+                    if resp.status != 200:
+                        yield e.plain_result(f"❌ P2P API {resp.status}")
+                        return
+                    data = await resp.json()
+        except Exception as ex:
+            yield e.plain_result(f"❌ 请求失败: {ex}")
+            return
+
+        if not isinstance(data, list) or not data:
+            yield e.plain_result("📡 暂无 JMA 地震情报")
+            return
+
+        parser = ParserRegistry.get("jma_p2p_info_http")
+        if not parser:
+            yield e.plain_result("❌ 解析器未注册")
+            return
+
+        envelopes = parser.parse_message(data) or []
+        if not envelopes:
+            yield e.plain_result("📡 暂无 JMA 地震情报")
+            return
+
+        # 跳过 Foreign（遠地地震）
+        target = None
+        for env in envelopes:
+            raw = env.event.raw if isinstance(env.event.raw, dict) else {}
+            issue = raw.get("issue", {}) or {}
+            if isinstance(issue, dict) and issue.get("type") == "Foreign":
+                continue
+            target = env
+            break
+
+        if target is None:
+            yield e.plain_result("📡 暂无日本本地 JMA 地震情报")
+            return
+
+        # 展示文本
+        from .message.presenters import present
+        text = present(target)
+        if not text:
+            yield e.plain_result("📡 暂无 JMA 地震情报")
+            return
+
+        # 图片
+        from astrbot.api.message_components import Image
+        chain = [Plain(text)]
+
+        def _img(path):
+            if path and os.path.exists(path):
+                with open(path, "rb") as f:
+                    chain.append(Image.fromBase64(base64.b64encode(f.read()).decode()))
+
+        ev = target.event
+        # 烈度/震度图
+        if self._intensity_img_renderer and ev.magnitude is not None:
+            for p in self._intensity_img_renderer.render_both(ev.magnitude, ev.depth):
+                _img(p)
+
+        # NHK 双图
+        if self._push_svc:
+            try:
+                nhk_b64 = await self._push_svc._fetch_nhk_report_images(target)
+                if nhk_b64:
+                    for b64 in nhk_b64:
+                        chain.append(Image.fromBase64(b64))
+                else:
+                    # NHK 失败 → PetalMap 双图
+                    if self._map_builder and ev.latitude is not None:
+                        msg_fmt = dict(self.config.get("message_format", {}))
+                        for zoom in (4, 8):
+                            try:
+                                msg_fmt["map_zoom_level"] = zoom
+                                path = await self._map_builder.render_map_image(
+                                    ev.latitude, ev.longitude, msg_fmt)
+                                _img(path)
+                            except Exception as ex:
+                                logger.warning(f"[JMA] 地图 zoom={zoom} 渲染失败: {ex}")
+            except Exception as ex:
+                logger.warning(f"[JMA] NHK 图异常: {ex}")
+        else:
+            # push_svc 未就绪，直接 PetalMap
+            if self._map_builder and ev.latitude is not None:
+                msg_fmt = dict(self.config.get("message_format", {}))
+                for zoom in (4, 8):
+                    try:
+                        msg_fmt["map_zoom_level"] = zoom
+                        path = await self._map_builder.render_map_image(
+                            ev.latitude, ev.longitude, msg_fmt)
+                        _img(path)
+                    except Exception as ex:
+                        logger.warning(f"[JMA] 地图 zoom={zoom} 渲染失败: {ex}")
+
+        yield e.chain_result(chain)
 
     @filter.regex(r"^/usgs(?:\s|$)")
     async def q_usgs(self, e):
@@ -1978,6 +2136,97 @@ class MixDisasterWarningPlugin(Star):
                 yield event.plain_result(text)
         except Exception as ex:
             yield event.plain_result(f"❌ 556抓取失败: {ex}")
+
+    @filter.regex(r"^/NHK(?:\s|$)")
+    async def q_nhk(self, event: AstrMessageEvent):
+        """查询最新 JMA 551 事件的 NHK 双图（调试用）。"""
+        if not self.database:
+            yield event.plain_result("❌ 数据库未就绪")
+            return
+
+        # 查询最新 JMA 551 事件
+        rows = await self._query_source_events("jma_p2p_info", 1, 1)
+        if not rows:
+            rows = await self._query_source_events("jma_p2p_info_http", 1, 1)
+        if not rows:
+            yield event.plain_result("📡 暂无 JMA 551 事件记录")
+            return
+
+        row = rows[0]
+        import json
+        raw_raw = row.get("raw_json") or "{}"
+        if isinstance(raw_raw, str):
+            try:
+                raw = json.loads(raw_raw)
+            except json.JSONDecodeError:
+                raw = {}
+        elif isinstance(raw_raw, dict):
+            raw = raw_raw
+        else:
+            raw = {}
+
+        if not raw:
+            yield event.plain_result("❌ 事件无原始数据")
+            return
+
+        from .domain.models import EarthquakeReport
+        ev = EarthquakeReport(
+            source_id=row.get("source", "jma_p2p_info"),
+            event_id=row.get("real_event_id", ""),
+            occurred_at=None,
+            latitude=row.get("latitude"),
+            longitude=row.get("longitude"),
+            magnitude=row.get("magnitude"),
+            depth=row.get("depth"),
+            place_name=row.get("place_name", ""),
+            raw=raw,
+        )
+        from .domain.models import EventEnvelope, EventIdentity, SourcePayload
+        env = EventEnvelope(
+            identity=EventIdentity(
+                event_id=ev.event_id, source_id=ev.source_id, event_type="earthquake",
+            ),
+            event=ev,
+            payload=SourcePayload(source_id=ev.source_id, raw=raw),
+        )
+
+        # 提取调试信息
+        eq_t = (raw.get("earthquake", {}) or {}).get("time", "N/A")
+        iss_t = (raw.get("issue", {}) or {}).get("time", "N/A")
+        iss_type = (raw.get("issue", {}) or {}).get("type", "N/A")
+        mag = row.get("magnitude", "?")
+        place = row.get("place_name", "") or row.get("region", "") or "?"
+
+        lines = [
+            f"🔍 NHK 图调试 — M{mag} {place}",
+            f"  ├ earthquake.time: {eq_t}",
+            f"  ├ issue.time:      {iss_t}",
+            f"  ├ issue.type:      {iss_type}",
+        ]
+
+        if not hasattr(self, '_push_svc') or not self._push_svc:
+            lines.append("  └ ❌ PushExecutionService 未就绪")
+            yield event.plain_result("\n".join(lines))
+            return
+
+        from astrbot.api.message_components import Image, Plain
+        try:
+            b64_list = await self._push_svc._fetch_nhk_report_images(env)
+            if b64_list and len(b64_list) == 2:
+                import base64
+                chain = [Plain("\n".join(lines) + "\n  └ ✅ NHK 双图获取成功")]
+                for b64 in b64_list:
+                    chain.append(Image.fromBase64(b64))
+                yield event.chain_result(chain)
+            elif b64_list:
+                lines.append(f"  └ ⚠️ 仅获取 {len(b64_list)}/2 张图")
+                yield event.plain_result("\n".join(lines))
+            else:
+                lines.append("  └ ❌ NHK 图未找到（15s 扫描无命中）")
+                yield event.plain_result("\n".join(lines))
+        except Exception as e:
+            lines.append(f"  └ ❌ 异常: {e}")
+            yield event.plain_result("\n".join(lines))
 
     @filter.regex(r"^/httpstatus(?:\s|$)")
     async def http_status_cmd(self, event: AstrMessageEvent):
