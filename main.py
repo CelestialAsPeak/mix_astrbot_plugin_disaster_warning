@@ -939,16 +939,15 @@ class MixDisasterWarningPlugin(Star):
             logger.info(f"[HTTP] {source_id} 解析结果为空列表")
             return
 
-        # 按发生时间降序排序，确保取到最新一条
-        # 部分 API 返回正序（旧→新），不能直接用 envelopes[0]
+        # 按发生/发布时间降序排序，确保取到最新一条
         _epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
         try:
-            envelopes.sort(
-                key=lambda e: e.event.occurred_at if e.event.occurred_at is not None else _epoch,
-                reverse=True,
-            )
+            def _event_time(e):
+                ev = e.event
+                t = getattr(ev, "occurred_at", None) or getattr(ev, "timestamp", None)
+                return t if t is not None else _epoch
+            envelopes.sort(key=_event_time, reverse=True)
         except TypeError:
-            # 混合 naive/aware datetime 兜底，维持解析器原始顺序
             pass
         newest = envelopes[0]
         eid = newest.identity.event_id
