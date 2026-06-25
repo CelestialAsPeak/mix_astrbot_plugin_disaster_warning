@@ -478,13 +478,14 @@ class GeonetParser(BaseParser):
             if not event_id:
                 continue
 
+            _dr = to_float(coords[2]) if len(coords) > 2 else to_float(props.get("depth"))
             event = EarthquakeReport(
                 source_id=self.source_id,
                 event_id=event_id,
                 occurred_at=parse_ts(props.get("time", props.get("origintime", ""))),
                 latitude=to_float(coords[1]) if len(coords) > 1 else None,
                 longitude=to_float(coords[0]) if len(coords) > 0 else None,
-                depth=to_float(coords[2]) if len(coords) > 2 else to_float(props.get("depth")),
+                depth=None if _dr is not None and _dr < 0 else _dr,
                 magnitude=to_float(props.get("magnitude", props.get("mag"))),
                 place_name=str(props.get("locality", props.get("place", "")) or ""),
                 region=str(props.get("region", "") or ""),
@@ -587,7 +588,8 @@ class NrcanParser(BaseParser):
         latitude = self._parse_xml_float(origin.find("q:latitude/q:value", ns))
         longitude = self._parse_xml_float(origin.find("q:longitude/q:value", ns))
         depth_m = self._parse_xml_float(origin.find("q:depth/q:value", ns))
-        depth_km = depth_m / 1000.0 if depth_m is not None else None
+        # NRCan QuakeML depth 实际是 km 而非标准米的单位，不加 /1000
+        depth_km = depth_m if depth_m is not None else None
 
         # 震级
         mag_elem = elem.find("q:magnitude", ns)
@@ -658,13 +660,14 @@ class UsgsWeeklyParser(BaseParser):
             if not event_id:
                 continue
 
+            _dr = to_float(coords[2]) if len(coords) > 2 else to_float(props.get("depth"))
             event = EarthquakeReport(
                 source_id=self.source_id,
                 event_id=event_id,
                 occurred_at=parse_ts(props.get("time", props.get("origintime", ""))),
                 latitude=to_float(coords[1]) if len(coords) > 1 else None,
                 longitude=to_float(coords[0]) if len(coords) > 0 else None,
-                depth=to_float(coords[2]) if len(coords) > 2 else to_float(props.get("depth")),
+                depth=None if _dr is not None and _dr < 0 else _dr,
                 magnitude=to_float(props.get("mag", props.get("magnitude"))),
                 place_name=str(props.get("place", props.get("location", "")) or ""),
                 url=to_str(props.get("url")),

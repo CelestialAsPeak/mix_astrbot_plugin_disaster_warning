@@ -1669,14 +1669,18 @@ class MixDisasterWarningPlugin(Star):
         if ts:
             try:
                 # DB 存的是 occurred_at.isoformat() 格式，如 "2026-06-24T15:30:00+00:00"
-                # 也处理 "2026/06/06T22:55:16"（CENAIS 原始格式）
-                for fmt in ("%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S"):
-                    try:
-                        occurred_at = datetime.strptime(ts[:19].replace("T", " "), fmt)
-                        if occurred_at:
-                            break
-                    except ValueError:
-                        continue
+                # 优先用 fromisoformat 保留时区信息（否则 PHIVOLCS +08:00 等会在后面被误当 UTC 加倍偏移）
+                try:
+                    occurred_at = datetime.fromisoformat(ts)
+                except (ValueError, TypeError):
+                    # 降级：处理 "2026/06/06T22:55:16"（CENAIS 原始格式）等无时区格式
+                    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S"):
+                        try:
+                            occurred_at = datetime.strptime(ts[:19].replace("T", " "), fmt)
+                            if occurred_at:
+                                break
+                        except ValueError:
+                            continue
             except Exception:
                 pass
 
