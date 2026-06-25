@@ -1024,13 +1024,13 @@ class MixDisasterWarningPlugin(Star):
             "phivolcs_http": ("https://earthquake.phivolcs.dost.gov.ph/", 10, True),
             "csnc_http": ("https://www.sismologia.cl/index.html", 10, True),
             "usgs_weekly": ("https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_week.geojson", 10, False),
-            # Wolfx HTTP 备用
-            "jma_wolfx_http": ("https://api.wolfx.jp/jma_eew.json", 1, False),
-            "jma_wolfx_info_http": ("https://api.wolfx.jp/jma_eqlist.json", 60, False),
-            # P2P HTTP 备用
+            # Wolfx HTTP（仅情报，EEW已禁用）
+            # "jma_wolfx_http": ("https://api.wolfx.jp/jma_eew.json", 1, False),
+            "jma_wolfx_info_http": ("https://api.wolfx.jp/jma_eqlist.json", 1, False),
+            # P2P HTTP 备用（EEW警报主源 + 情报）
             "jma_p2p_http": ("https://api.p2pquake.net/v2/history?codes=556&limit=1", 1, False),
-            "jma_p2p_info_http": ("https://api.p2pquake.net/v2/jma/quake?limit=5", 60, False),
-            "jma_tsunami_p2p_http": ("https://api.p2pquake.net/v2/history?codes=552&limit=1", 60, False),
+            "jma_p2p_info_http": ("https://api.p2pquake.net/v2/jma/quake?limit=5", 1, False),
+            "jma_tsunami_p2p_http": ("https://api.p2pquake.net/v2/history?codes=552&limit=1", 1, False),
         }
         for sid, (url, interval, raw_text) in POLLERS.items():
             if sid in sources:
