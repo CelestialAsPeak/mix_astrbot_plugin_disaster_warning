@@ -8,7 +8,7 @@ import json
 import math
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -269,6 +269,21 @@ def _group_intensity_points(points: list[dict]) -> list[tuple[float, dict[str, l
     return [(s, groups[s]) for s in sorted_scales]
 
 
+def _fmt_time_with_tz(dt, source_id, fmt="%Y年%m月%d日%H:%M:%S"):
+    """格式化时间并附加时区标签。JMA 源 → UTC+9，其他 → UTC+8。"""
+    if dt is None:
+        return ""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    if source_id and str(source_id).startswith("jma_"):
+        target_tz = timezone(timedelta(hours=9))
+        tag = "(UTC+9)"
+    else:
+        target_tz = timezone(timedelta(hours=8))
+        tag = "(UTC+8)"
+    return dt.astimezone(target_tz).strftime(fmt) + tag
+
+
 def present_eew(event: EewEvent) -> str:
     """格式化 EEW 预警消息。"""
     is_jma = event.source_id.startswith("jma_")
@@ -321,7 +336,7 @@ def present_eew(event: EewEvent) -> str:
     if event.depth is not None:
         lines.append(_field("深度", f"{event.depth:.0f} km"))
     if event.occurred_at:
-        lines.append(_field("发震时间", event.occurred_at.strftime("%Y年%m月%d日%H:%M:%S")))
+        lines.append(_field("发震时间", _fmt_time_with_tz(event.occurred_at, event.source_id)))
     coords = _format_coords(event.latitude, event.longitude)
     if coords:
         lines.append(_field("经纬度", coords))
@@ -411,7 +426,7 @@ def present_earthquake_report(event: EarthquakeReport) -> str:
         lines.append(_field("深度", surveying))
         lines.append(_field("经纬度", surveying))
         if event.occurred_at:
-            lines.append(_field("发震时间", event.occurred_at.strftime("%Y年%m月%d日%H:%M:%S")))
+            lines.append(_field("发震时间", _fmt_time_with_tz(event.occurred_at, event.source_id)))
     else:
         if event.place_name:
             lines.append(_field("震中", event.place_name))
@@ -434,7 +449,7 @@ def present_earthquake_report(event: EarthquakeReport) -> str:
             d_text = "极浅" if event.depth == 0.0 else f"{event.depth:.0f} km"
             lines.append(_field("深度", d_text))
         if event.occurred_at:
-            lines.append(_field("发震时间", event.occurred_at.strftime("%Y年%m月%d日%H:%M:%S")))
+            lines.append(_field("发震时间", _fmt_time_with_tz(event.occurred_at, event.source_id)))
         coords = _format_coords(event.latitude, event.longitude)
         if coords:
             lines.append(_field("经纬度", coords))
@@ -491,7 +506,7 @@ def present_tsunami(event: TsunamiEvent) -> str:
                         ("日本气象厅" if is_jma else "海啸预警中心")))
 
     if event.timestamp:
-        lines.append(_field("发布时间", event.timestamp.strftime("%Y年%m月%d日 %H:%M")))
+        lines.append(_field("发布时间", _fmt_time_with_tz(event.timestamp, event.source_id, "%Y年%m月%d日 %H:%M")))
 
     lines.append(_SEPARATOR)
 
@@ -572,7 +587,7 @@ def present_weather(event: WeatherEvent) -> str:
     if event.headline:
         lines.append(_field("详情", event.headline[:200]))
     if event.effective_time:
-        lines.append(_field("生效", event.effective_time.strftime("%Y-%m-%d %H:%M")))
+        lines.append(_field("生效", _fmt_time_with_tz(event.effective_time, event.source_id, "%Y-%m-%d %H:%M")))
     lines.append(_SEPARATOR)
     return "\n".join(lines)
 
@@ -611,7 +626,7 @@ def present_snet(event: EarthquakeReport) -> str:
             from datetime import datetime, timezone, timedelta
             dt = datetime.strptime(str(timestamp), "%Y%m%d%H%M00").replace(tzinfo=timezone.utc)
             dt_cst = dt + timedelta(hours=8)
-            display_time = dt_cst.strftime("%Y-%m-%d %H:%M:%S")
+            display_time = dt_cst.strftime("%Y-%m-%d %H:%M:%S") + "(UTC+8)"
         except (ValueError, TypeError):
             pass
 
@@ -692,7 +707,7 @@ def present_typhoon_push(
     lines.append(_SEP_LINE)
 
     if event.last_updated:
-        lines.append(f"‖ 时间：{event.last_updated.strftime('%m月%d日 %H:%M')}")
+        lines.append(f"‖ 时间：{_fmt_time_with_tz(event.last_updated, event.source_id, '%m月%d日 %H:%M')}")
 
     cat_name = _CATEGORY_NAMES.get(event.category, "")
     if cat_name:
@@ -718,7 +733,7 @@ def present_typhoon_push(
         lines.append(_SEP_LINE)
         lines.append("‖ 预报：")
         for pt in forecast[:5]:
-            ts = pt.timestamp.strftime("%m/%d %H:%M")
+            ts = _fmt_time_with_tz(pt.timestamp, event.source_id, "%m/%d %H:%M")
             parts = []
             if pt.wind_speed is not None:
                 parts.append(f"{pt.wind_speed:.0f}m/s")
