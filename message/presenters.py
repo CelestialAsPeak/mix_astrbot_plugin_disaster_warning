@@ -734,10 +734,71 @@ def present_typhoon_push(
     return "\n".join(lines)
 
 
+def present_p2p_eew_alert(event: EewEvent) -> str:
+    """P2P 556 紧急地震速报（气象厅）专用格式。"""
+    raw = event.raw if isinstance(event.raw, dict) else {}
+    earthquake = raw.get("earthquake", {}) or {}
+    hypocenter = earthquake.get("hypocenter", {}) or {}
+    areas = raw.get("areas", []) or []
+
+    pppp = str(hypocenter.get("name", "") or "")
+
+    prefs = []
+    seen_prefs = set()
+    for a in areas:
+        if isinstance(a, dict):
+            p = str(a.get("pref", "") or "")
+            if p and p not in seen_prefs:
+                prefs.append(p)
+                seen_prefs.add(p)
+
+    shindo_groups: dict[str, list[tuple[str, str]]] = {}
+    for a in areas:
+        if not isinstance(a, dict):
+            continue
+        name = str(a.get("name", "") or "")
+        st = a.get("scaleTo")
+        shindo_label = _shindo_label_str(st / 10.0) if st is not None else "不明"
+        arrival = str(a.get("arrivalTime", "") or "")
+        time_only = ""
+        if arrival:
+            parts = arrival.split(" ")
+            time_only = parts[-1] if len(parts) > 1 else arrival
+        shindo_groups.setdefault(shindo_label, []).append((name, time_only))
+
+    _SORTED = ["震度7", "震度6強", "震度6弱", "震度5強", "震度5弱",
+               "震度4", "震度3", "震度2", "震度1", "震度0"]
+    sorted_groups = sorted(
+        shindo_groups.items(),
+        key=lambda x: _SORTED.index(x[0]) if x[0] in _SORTED else 99,
+    )
+
+    lines = []
+    lines.append("[緊急地震速報（気象庁）]")
+    lines.append(f"{pppp}で地震 強い揺れに警戒")
+    lines.append("=" * 19)
+    lines.append(" ".join(prefs))
+    lines.append("=" * 19)
+    if sorted_groups:
+        lines.append("‖ 强震区域：")
+        for label, items in sorted_groups:
+            lines.append(f"‖ {label}：")
+            for name, arrival in items:
+                if arrival:
+                    lines.append(f"‖ {name}[{arrival}到達](UTC+9)")
+                else:
+                    lines.append(f"‖ {name}")
+        lines.append("=" * 19)
+    return "\n".join(lines)
+
+
 def present(envelope: EventEnvelope) -> str:
     """自动选择展示格式。"""
     event = envelope.event
     if isinstance(event, EewEvent):
+        # P2P 556 专用格式（气象厅警报）
+        if event.source_id in ("jma_p2p_http", "jma_p2p"):
+            return present_p2p_eew_alert(event)
         return present_eew(event)
     if isinstance(event, EarthquakeReport):
         # SNET 专用格式
@@ -759,6 +820,6 @@ def present(envelope: EventEnvelope) -> str:
 __all__ = [
     "present", "present_eew", "present_earthquake_report",
     "present_tsunami", "present_weather", "present_typhoon",
-    "present_typhoon_push",
+    "present_typhoon_push", "present_p2p_eew_alert",
     "WEATHER_TYPE_MAP", "LEVEL_COLORS",
 ]

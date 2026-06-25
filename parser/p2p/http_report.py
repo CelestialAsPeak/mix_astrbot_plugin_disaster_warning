@@ -97,7 +97,7 @@ class P2pJmaInfoHttpParser(BaseParser):
     def parse(self, raw: dict) -> list[EventEnvelope] | None:
         if not isinstance(raw, dict):
             return None
-        if raw.get("code") != 551:
+        if "code" in raw and raw.get("code") != 551:
             return None
 
         eq = raw.get("earthquake", {})
