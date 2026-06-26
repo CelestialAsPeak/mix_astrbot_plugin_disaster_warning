@@ -451,11 +451,26 @@ class PushExecutionService:
 
                 elif isinstance(envelope.event, EarthquakeReport) and self.intensity_img_renderer:
                     ev = envelope.event
-                    # ── JMA 报告源：用 NHK 双图替代 Playwright 双图 ──
+                    # ── JMA 报告源：用实际震度渲染图片（不用 CSIS 估算）──
                     if ev.source_id in ("jma_p2p_info", "jma_p2p_info_http"):
-                        if ev.magnitude is not None:
-                            for p in self.intensity_img_renderer.render_both(ev.magnitude, ev.depth):
-                                _img(p)
+                        # 取实际最大震度：优先 mmi，其次 intensity_points
+                        actual_shindo = None
+                        if ev.mmi is not None:
+                            actual_shindo = ev.mmi
+                        elif ev.intensity_points:
+                            max_s = max(
+                                (p.get("scale") for p in ev.intensity_points
+                                 if isinstance(p, dict) and p.get("scale") is not None),
+                                default=None,
+                            )
+                            if max_s is not None:
+                                actual_shindo = max_s
+                        if actual_shindo is not None:
+                            from ..message.presenters import _shindo_label_str
+                            _img(self.intensity_img_renderer.render_shindo_actual(
+                                _shindo_label_str(actual_shindo), "最大震度"))
+                        else:
+                            _img(self.intensity_img_renderer.render_shindo_actual("不明", "最大震度"))
                         nhk_b64 = await self._fetch_nhk_report_images(envelope)
                         if nhk_b64:
                             for b64 in nhk_b64:

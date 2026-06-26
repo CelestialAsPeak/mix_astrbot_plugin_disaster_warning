@@ -91,6 +91,30 @@ class P2pJmaReportParser(BaseParser):
         occurred_at = parse_jst_time(earthquake.get("time", "")) or self._parse_datetime(earthquake.get("time", ""))
         intensity_points = raw.get("points") or raw.get("intensityPoints")
 
+        # maxScale → mmi（JMA ×10格式，÷10得震度值）
+        max_scale_raw = earthquake.get("maxScale")
+        mmi_val = None
+        if max_scale_raw is not None:
+            try:
+                mmi_val = float(max_scale_raw) / 10.0
+            except (ValueError, TypeError):
+                pass
+
+        # 统一 intensity_points 的 scale 为 ÷10 格式（与 HTTP parser 一致）
+        if isinstance(intensity_points, list):
+            normalized = []
+            for p in intensity_points:
+                if isinstance(p, dict):
+                    p2 = dict(p)
+                    s = p2.get("scale")
+                    if s is not None:
+                        try:
+                            p2["scale"] = float(s) / 10.0
+                        except (ValueError, TypeError):
+                            p2["scale"] = None
+                    normalized.append(p2)
+            intensity_points = normalized
+
         event = EarthquakeReport(
             source_id=self.source_id,
             event_id=event_id,
@@ -102,6 +126,7 @@ class P2pJmaReportParser(BaseParser):
             place_name=str(hypocenter.get("name", "") or ""),
             region=to_str(earthquake.get("name", "")),
             is_cancel=is_cancel,
+            mmi=mmi_val,
             intensity_points=intensity_points,
             raw=raw,
         )

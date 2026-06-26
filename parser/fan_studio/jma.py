@@ -16,11 +16,13 @@ try:
     from ..base import BaseParser
     from ..registry import ParserRegistry
     from ...utils.convert import to_float, to_int, to_str
+    from ...utils.time import parse_jst_time
 
 except ImportError:
     from parser.base import BaseParser
     from parser.registry import ParserRegistry
     from utils.convert import to_float, to_int, to_str
+    from utils.time import parse_jst_time
 
 @ParserRegistry.register("jma_fanstudio")
 class JMAEEWParser(BaseParser):
@@ -36,9 +38,19 @@ class JMAEEWParser(BaseParser):
         if not event_id:
             return None
 
-        occurred_at = self._parse_datetime(raw.get("originTime", raw.get("shockTime", "")))
-        report_num = to_int(raw.get("reportNum", raw.get("updates", 1))) or 1
-        is_final = bool(raw.get("isFinal", False))
+        # FAN Studio API 文档: shockTime = UTC+9, createTime = UTC+9
+        occurred_at = parse_jst_time(raw.get("shockTime", "")) or self._parse_datetime(raw.get("shockTime", ""))
+        announced_time = parse_jst_time(raw.get("createTime", "")) or self._parse_datetime(raw.get("createTime", ""))
+        report_num = to_int(raw.get("updates", 1)) or 1
+
+        # FAN Studio API 字段对照:
+        #   infoTypeName → is_warn ("警報"/"予報")
+        #   epiIntensity → max_intensity
+        #   final → is_final
+        #   cancel → is_cancel
+        info_type = str(raw.get("infoTypeName", "") or "")
+        is_warn = (info_type == "警報")
+        is_final = bool(raw.get("final", False))
 
         event = EewEvent(
             source_id=self.source_id,
@@ -50,12 +62,14 @@ class JMAEEWParser(BaseParser):
             magnitude=to_float(raw.get("magnitude")),
             magnitude_type=to_str(raw.get("magnitudeType")),
             place_name=str(raw.get("placeName", "") or ""),
-            max_intensity=str(raw.get("intensity", raw.get("maxIntensity", "")) or ""),
+            max_intensity=str(raw.get("epiIntensity", "") or ""),
             serial=report_num,
             is_final=is_final,
-            is_warn=bool(raw.get("isWarn", False)),
+            is_cancel=bool(raw.get("cancel", False)),
+            is_warn=is_warn,
             is_sea=raw.get("isSea"),
             report_num=report_num,
+            announced_time=announced_time,
             accuracy=raw.get("accuracy"),
             raw=raw,
         )
