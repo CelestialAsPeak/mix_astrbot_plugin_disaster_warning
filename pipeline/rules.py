@@ -206,8 +206,20 @@ class EarthquakeThresholdRule(BaseRule):
     }
 
     def evaluate(self, ctx: RuleContext) -> RuleDecision:
-        # SNET 是震度监测，非地震，已在 _fetch_snet_once() 中用 min_shindo 过滤，跳过阈值检查
+        # SNET 是震度监测，非地震，用 snet_filter.min_shindo 对比
         if ctx.source_id in ("snet", "snet_http"):
+            _sn_filters = ctx.config.get("earthquake_filters", {})
+            _sn_cfg = _sn_filters.get("snet_filter", {})
+            if isinstance(_sn_cfg, dict):
+                _min_shindo = float(_sn_cfg.get("min_shindo", 0.5))
+                # 从 metadata 获取触发测站的最高震度
+                _sn_meta = ctx.envelope.metadata or {}
+                _sn_triggered = _sn_meta.get("triggered", [])
+                if _sn_triggered and isinstance(_sn_triggered, list):
+                    _max_shindo = max(s.get("shindo", 0) for s in _sn_triggered)
+                    if _max_shindo < _min_shindo:
+                        return RuleDecision.reject(
+                            f"snet_filter: 最大震度{_max_shindo}<{_min_shindo}", self.name)
             return RuleDecision.accept(rule_name=self.name)
 
         if not isinstance(ctx.event, (EewEvent, EarthquakeReport)):
@@ -278,7 +290,7 @@ class EarthquakeThresholdRule(BaseRule):
                 else:
                     min_shindo_val = f.get("min_shindo", 0)
                 shindo = self._get_intensity(ctx)  # JMA/CWA 的 max_intensity = 震度
-                mag_ok = (min_mag <= 0 or check_mag is None or check_mag >= min_mag)
+                mag_ok = (min_mag <= 0 or (check_mag is None and isinstance(ctx.event, EewEvent)) or check_mag >= min_mag)
                 shindo_ok = (min_shindo_val <= 0 or (shindo is not None and shindo >= min_shindo_val))
                 if mag_ok or shindo_ok:
                     return RuleDecision.accept(rule_name=self.name)
@@ -290,7 +302,7 @@ class EarthquakeThresholdRule(BaseRule):
             else:
                 min_int = self._get_field(f, "最小烈度", "烈度", "min_intensity", default=0)
             intensity = self._get_intensity(ctx)
-            mag_ok = (min_mag <= 0 or check_mag is None or check_mag >= min_mag)
+            mag_ok = (min_mag <= 0 or (check_mag is None and isinstance(ctx.event, EewEvent)) or check_mag >= min_mag)
             int_ok = (min_int <= 0 or (intensity is not None and intensity >= min_int))
             if mag_ok or int_ok:
                 return RuleDecision.accept(rule_name=self.name)
@@ -304,7 +316,7 @@ class EarthquakeThresholdRule(BaseRule):
             min_int = self._get_field(direct, "最小烈度", "烈度", "min_intensity", default=0)
             intensity = self._get_intensity(ctx)
             # OR逻辑：震级够 或 烈度够 即可推送
-            mag_ok = (min_mag <= 0 or check_mag is None or check_mag >= min_mag)
+            mag_ok = (min_mag <= 0 or (check_mag is None and isinstance(ctx.event, EewEvent)) or check_mag >= min_mag)
             int_ok = (min_int <= 0 or (intensity is not None and intensity >= min_int))
             if mag_ok or int_ok:
                 return RuleDecision.accept(rule_name=self.name)
@@ -320,7 +332,7 @@ class EarthquakeThresholdRule(BaseRule):
             min_int = self._get_field(gf, "最小烈度", "烈度", "min_intensity", default=0)
             intensity = self._get_intensity(ctx)
             # OR逻辑：震级够 或 烈度够 即通过
-            mag_ok = (min_mag <= 0 or check_mag is None or check_mag >= min_mag)
+            mag_ok = (min_mag <= 0 or (check_mag is None and isinstance(ctx.event, EewEvent)) or check_mag >= min_mag)
             int_ok = (min_int <= 0 or (intensity is not None and intensity >= min_int))
             if mag_ok or int_ok:
                 continue  # 当前过滤器通过，继续检查下一个

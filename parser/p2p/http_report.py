@@ -26,11 +26,13 @@ try:
     from ..base import BaseParser
     from ..registry import ParserRegistry
     from ...utils.convert import to_float, to_str
+    from ...utils.time import parse_jst_time
 
 except ImportError:
     from parser.base import BaseParser
     from parser.registry import ParserRegistry
     from utils.convert import to_float, to_str
+    from utils.time import parse_jst_time
 
 # JMA 地震情报 issue.type → 中文标题
 ISSUE_TITLE_MAP: dict[str, str] = {
@@ -113,8 +115,8 @@ class P2pJmaInfoHttpParser(BaseParser):
         issue_type = to_str(issue.get("type")) or "DetailScale"
         event_id = f"{origin_time}|{issue_type}"
 
-        # 发震时间
-        occurred_at = self._parse_datetime(origin_time)
+        # 发震时间（P2P API 返回 JST）
+        occurred_at = parse_jst_time(origin_time) or self._parse_datetime(origin_time)
 
         # hypocenter 嵌套结构（v2/jma/quake 格式）
         hypocenter = eq.get("hypocenter", {})

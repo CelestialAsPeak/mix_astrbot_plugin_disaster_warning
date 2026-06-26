@@ -16,11 +16,13 @@ try:
     from ..base import BaseParser
     from ..registry import ParserRegistry
     from ...utils.convert import to_float, to_int, to_str
+    from ...utils.time import parse_jst_time
 
 except ImportError:
     from parser.base import BaseParser
     from parser.registry import ParserRegistry
     from utils.convert import to_float, to_int, to_str
+    from utils.time import parse_jst_time
 
 @ParserRegistry.register("jma_p2p")
 class P2pJmaEewParser(BaseParser):
@@ -47,7 +49,7 @@ class P2pJmaEewParser(BaseParser):
             return None
 
         hypocenter = earthquake.get("hypocenter", {}) or {}
-        occurred_at = self._parse_datetime(earthquake.get("originTime", raw.get("time", "")))
+        occurred_at = parse_jst_time(earthquake.get("originTime", raw.get("time", ""))) or self._parse_datetime(earthquake.get("originTime", raw.get("time", "")))
 
         # P2P report_num 从 issue.serial 提取
         serial = to_int(issue.get("serial")) or 0
@@ -81,7 +83,7 @@ class P2pJmaEewParser(BaseParser):
             is_cancel=bool(raw.get("cancelled", False)),
             is_sea=earthquake.get("isSea"),
             report_num=serial,
-            announced_time=self._parse_datetime(issue.get("time", "")),
+            announced_time=parse_jst_time(issue.get("time", "")) or self._parse_datetime(issue.get("time", "")),
             warn_areas=areas,
             raw=raw,
         )
