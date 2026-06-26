@@ -214,21 +214,27 @@ class PushExecutionService:
         img_ts = dt_iss.strftime("%Y%m%d%H%M%S")
 
         # ── 秒数地毯式扫描（5 HEAD/sec, 15s 超时）──
-        logger.info(f"[NHK] 开始爆破 — 基准={base_ymdhms}XX 图片时间戳={img_ts}")
-        found_sec = await self._scan_nhk_sec(base_ymdhms, img_ts)
-        if found_sec is None:
+        # 同时尝试 issue.time 和 issue.time+1s（不同事件偏移不同）
+        import datetime as _dt_mod
+        dt_img_plus1 = dt_iss + _dt_mod.timedelta(seconds=1)
+        img_ts_plus1 = dt_img_plus1.strftime("%Y%m%d%H%M%S")
+        ts_list = [img_ts, img_ts_plus1]
+        logger.info(f"[NHK] 开始爆破 — 基准={base_ymdhms}XX 时间戳列表={[t[-6:] for t in ts_list]}")
+        found = await self._scan_nhk_sec(base_ymdhms, ts_list)
+        if found is None:
             logger.warning(f"[NHK] 爆破失败 — 全部 404，回退 PetalMap")
             self._nhk_cache[cache_key] = None
             return None
 
-        logger.info(f"[NHK] 爆破成功！时间戳: {base_ymdhms}{found_sec:02d}_{img_ts}")
+        found_sec, found_ts = found
+        logger.info(f"[NHK] 爆破成功！时间戳: {base_ymdhms}{found_sec:02d}_{found_ts}")
 
         # ── 双图下载 ──
         event_time = f"{base_ymdhms}{found_sec:02d}"
         base_url = "https://news.web.nhk/sokuho/jishin/data/"
         urls = [
-            f"{base_url}JS00cwA0{event_time}_{img_ts}.jpg",
-            f"{base_url}JS00clA0{event_time}_{img_ts}.jpg",
+            f"{base_url}JS00cwA0{event_time}_{found_ts}.jpg",
+            f"{base_url}JS00clA0{event_time}_{found_ts}.jpg",
         ]
 
         import aiohttp
@@ -258,27 +264,36 @@ class PushExecutionService:
         logger.warning(f"[NHK] 双图仅拿到 {len(b64_list)}/2，丢弃")
         return None
 
-    async def _scan_nhk_sec(self, base_ymdhms: str, img_ts: str, timeout: int = 15) -> int | None:
-        """HEAD 地毯扫秒数 (5/sec, 最多 15s)。"""
+    async def _scan_nhk_sec(self, base_ymdhms: str, img_ts_list: list, timeout: int = 15) -> int | None:
+        """HEAD 地毯扫秒数 (5/sec, 最多 15s)。支持多图片时间戳交替试探。"""
         import aiohttp, asyncio, time as _time
 
         BATCH = 5
         start = _time.time()
         deadline = start + timeout
         total_tried = 0
+        # 确保至少有 1 个时间戳
+        if not img_ts_list:
+            img_ts_list = [""]
+        n_ts = len(img_ts_list)
 
-        async def _head(session, sec, batch_idx):
+        async def _head(session, sec, ts_idx, batch_idx):
+            ts = img_ts_list[ts_idx % n_ts]
             url = (f"https://news.web.nhk/sokuho/jishin/data/"
-                   f"JS00cwA0{base_ymdhms}{sec:02d}_{img_ts}.jpg")
+                   f"JS00cwA0{base_ymdhms}{sec:02d}_{ts}.jpg")
             try:
                 async with session.head(url, timeout=aiohttp.ClientTimeout(total=3)) as resp:
                     ok = resp.status == 200
-                    return (sec, ok, batch_idx)
+                    return (sec, ts, ok, batch_idx)
             except Exception:
-                return (sec, False, batch_idx)
+                return (sec, ts, False, batch_idx)
 
         async with aiohttp.ClientSession() as session:
+            batch_idx = 0
+            # 主循环：全部 60 秒都用第 1 个时间戳
+            ts_primary = img_ts_list[0]
             for batch_start in range(0, 60, BATCH):
+                batch_idx += 1
                 now = _time.time()
                 if now >= deadline:
                     tried = min(total_tried + BATCH, 60)
@@ -286,26 +301,51 @@ class PushExecutionService:
                     return None
 
                 batch = list(range(batch_start, min(batch_start + BATCH, 60)))
-                batch_idx = batch_start // BATCH + 1
                 sec_str = ",".join(f"{s:02d}" for s in batch)
                 total_tried += len(batch)
-                logger.info(f"[NHK] 正在爆破NHK图片爬取({total_tried}/60) 批次#{batch_idx}: {sec_str}")
+                logger.info(f"[NHK] 正在爆破NHK图片爬取({total_tried}/60) 批次#{batch_idx}@{ts_primary[-6:]}: {sec_str}")
 
-                tasks = [_head(session, s, batch_idx) for s in batch]
+                tasks = [_head(session, s, 0, batch_idx) for s in batch]
                 results = await asyncio.gather(*tasks, return_exceptions=True)
 
-                hit_secs = []
                 for r in results:
-                    if isinstance(r, tuple) and len(r) >= 2:
-                        if r[1]:
-                            elapsed = _time.time() - start
-                            logger.info(f"[NHK] ✅ 爆破成功！时间戳: {base_ymdhms}{r[0]:02d}_{img_ts} (耗时{elapsed:.1f}s)")
-                            return r[0]
+                    if isinstance(r, tuple) and len(r) >= 3 and r[2]:
+                        elapsed = _time.time() - start
+                        logger.info(f"[NHK] ✅ 爆破成功！事件秒={r[0]:02d} 时间戳={r[1]} (耗时{elapsed:.1f}s)")
+                        return (r[0], r[1])
 
-                # 限速: 确保每秒不超过 BATCH 个
                 elapsed = _time.time() - now
                 if elapsed < 1.0:
                     await asyncio.sleep(1.0 - elapsed)
+
+            # 第 1 个时间戳未命中，切到第 2+ 个时间戳重试
+            for ts_idx in range(1, n_ts):
+                ts = img_ts_list[ts_idx]
+                logger.info(f"[NHK] 切到时间戳 {ts[-6:]} 重扫...")
+                for batch_start in range(0, 60, BATCH):
+                    batch_idx += 1
+                    now = _time.time()
+                    if now >= deadline:
+                        logger.warning(f"[NHK] ⏰ 超时 ({timeout}s) — ts#{ts_idx} 未完成")
+                        return None
+
+                    batch = list(range(batch_start, min(batch_start + BATCH, 60)))
+                    total_tried += len(batch)
+                    logger.info(f"[NHK] 正在爆破NHK图片爬取(ts#{ts_idx}@{ts[-6:]}) 批次#{batch_idx}: "
+                                f"{','.join(f'{s:02d}' for s in batch)}")
+
+                    tasks = [_head(session, s, ts_idx, batch_idx) for s in batch]
+                    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+                    for r in results:
+                        if isinstance(r, tuple) and len(r) >= 3 and r[2]:
+                            elapsed = _time.time() - start
+                            logger.info(f"[NHK] ✅ 爆破成功！事件秒={r[0]:02d} 时间戳={r[1]} (耗时{elapsed:.1f}s)")
+                            return (r[0], r[1])
+
+                    elapsed = _time.time() - now
+                    if elapsed < 1.0:
+                        await asyncio.sleep(1.0 - elapsed)
 
         return None
 
