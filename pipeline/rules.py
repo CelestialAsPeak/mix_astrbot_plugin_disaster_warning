@@ -243,6 +243,9 @@ class EarthquakeThresholdRule(BaseRule):
 
         source_id = ctx.source_id
         mag = ctx.event.magnitude
+        # P2P ScalePrompt 等无震源数据阶段用 sentinel -1，转为 None 避免比较
+        if mag is not None and mag < 0:
+            mag = None
 
         # EEW 跨报追踪峰值
         event_id = str(getattr(ctx.envelope, "id", "") or getattr(getattr(ctx.envelope, "identity", None), "event_id", "") or "")

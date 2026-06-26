@@ -79,3 +79,5 @@ class MessageRouter:
                     await self._pipeline.handle(env)
                 except Exception as e:
                     logger.error(f"[Router] pipeline处理失败: {e}")
+                    import traceback
+                    logger.error(traceback.format_exc())

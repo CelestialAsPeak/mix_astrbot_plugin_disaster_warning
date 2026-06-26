@@ -307,43 +307,33 @@ class MixDisasterWarningPlugin(Star):
             validated = ConfigValidator.validate(dict(self.config))
             self.config.update(validated)
 
-            # 确保 groups 从 JSON 配置文件加载（AstrBot 可能只塞了 default 群组）
-            _cfg_groups = self.config.get("groups", {})
-            logger.info(f"[Mix_DBG] groups 原始值: type={type(_cfg_groups).__name__} value={_cfg_groups}")
-            _has_only_default = (
-                not isinstance(_cfg_groups, dict)
-                or not _cfg_groups
-                or (len(_cfg_groups) == 1 and "default" in _cfg_groups)
-            )
-            logger.info(f"[Mix_DBG] _has_only_default={_has_only_default}")
-            if _has_only_default:
-                try:
-                    import json
-                    # 优先查 AppData 生产配置，兜底 .astrbot 开发配置
-                    _cfg_candidates = [
-                        Path(self._plugin_root).parent.parent.parent.parent / "AppData" / "Local" / "AstrBot" / "data" / "config" / "mix_astrbot_plugin_disaster_warning_config.json",
-                        Path(self._plugin_root).parent.parent / "config" / "mix_astrbot_plugin_disaster_warning_config.json",
-                    ]
-                    _loaded = False
-                    for _cfg_path in _cfg_candidates:
-                        logger.info(f"[Mix_DBG] 尝试配置路径: {_cfg_path}")
-                        if _cfg_path.exists():
-                            logger.info(f"[Mix_DBG] 配置文件存在，读取中...")
-                            with open(_cfg_path, encoding="utf-8-sig") as _f:
-                                _file_cfg = json.load(_f)
-                            _file_groups = _file_cfg.get("groups", {})
-                            logger.info(f"[Mix_DBG] 文件中 groups: {_file_groups}")
-                            if isinstance(_file_groups, dict) and _file_groups:
-                                _named = {k: v for k, v in _file_groups.items() if k != "default"}
-                                if _named:
-                                    self.config.update({"groups": _file_groups})
-                                    logger.info(f"[Mix] 从文件加载 groups: {list(_file_groups.keys())}")
-                                    _loaded = True
-                                    break
-                    if not _loaded:
-                        logger.warning(f"[Mix] 所有配置路径均未找到命名群组，仍使用 default")
-                except Exception as _e:
-                    logger.warning(f"[Mix] 无法从文件加载 groups: {_e}")
+            # 从 AppData 生产配置文件加载全部设置（AstrBot 嵌套 schema 持久化不可靠）
+            try:
+                import json
+                _prod_paths = [
+                    Path(self._plugin_root).parent.parent.parent.parent / "AppData" / "Local" / "AstrBot" / "data" / "config" / "mix_astrbot_plugin_disaster_warning_config.json",
+                    Path(self._plugin_root).parent.parent / "config" / "mix_astrbot_plugin_disaster_warning_config.json",
+                ]
+                for _cfg_path in _prod_paths:
+                    if _cfg_path.exists():
+                        with open(_cfg_path, encoding="utf-8-sig") as _f:
+                            _file_cfg = json.load(_f)
+                        # 合并顶层字段（earthquake_filters, groups 等用文件值覆盖 AstrBot 传入的残缺值）
+                        for _k in ("earthquake_filters", "groups", "push_frequency_control", "sleep_earthquake_filters",
+                                   "message_format", "data_sources", "weather_config", "strategies",
+                                   "debug_config", "local_monitoring", "websocket_config", "display_timezone"):
+                            if _k in _file_cfg and isinstance(_file_cfg[_k], dict):
+                                _old = self.config.get(_k, {})
+                                if isinstance(_old, dict):
+                                    _merged = dict(_old)
+                                    _merged.update(_file_cfg[_k])
+                                    self.config[_k] = _merged
+                                else:
+                                    self.config[_k] = _file_cfg[_k]
+                        logger.info(f"[Mix] 已从 {_cfg_path.name} 加载生产配置")
+                        break
+            except Exception as _e:
+                logger.warning(f"[Mix] 无法从文件加载生产配置: {_e}")
 
             self.database = DatabaseManager(self._get_storage_path() / "events.db")
             await self.database.initialize()
@@ -1032,6 +1022,8 @@ class MixDisasterWarningPlugin(Star):
                         logger.info(f"[HTTP] << {source_id}: {time_s}{mag_s} {place}".strip())
                     except Exception as ex:
                         logger.error(f"[HTTP] {source_id} {env.identity.event_id} pipeline.handle 失败: {ex}")
+                        import traceback
+                        logger.error(traceback.format_exc())
             if pushed:
                 logger.info(f"[HTTP] << {source_id}: {pushed}/{len(new_envs)} 条推送")
 
