@@ -318,18 +318,39 @@ class MixDisasterWarningPlugin(Star):
                     if _cfg_path.exists():
                         with open(_cfg_path, encoding="utf-8-sig") as _f:
                             _file_cfg = json.load(_f)
-                        # 合并顶层字段（earthquake_filters, groups 等用文件值覆盖 AstrBot 传入的残缺值）
-                        for _k in ("earthquake_filters", "groups", "push_frequency_control", "sleep_earthquake_filters",
-                                   "message_format", "data_sources", "weather_config", "strategies",
+                        # earthquake_filters: 用文件值覆盖，但跳过全是 0 的条目
+                        # （AstrBot 持久化bug导致某些 filter 被写成了全零）
+                        _file_ef = _file_cfg.get("earthquake_filters")
+                        if isinstance(_file_ef, dict):
+                            _cur_ef = self.config.get("earthquake_filters", {})
+                            if not isinstance(_cur_ef, dict):
+                                _cur_ef = {}
+                            for _fid, _fcfg in _file_ef.items():
+                                if _fid not in _cur_ef:
+                                    _cur_ef[_fid] = _fcfg  # 补充缺失的 filter
+                                elif isinstance(_fcfg, dict):
+                                    # 已存在的 filter：只有文件有非零值才覆盖（用户通过 Web 界面设的）
+                                    _fm = _fcfg.get("min_magnitude", 0)
+                                    _fi = _fcfg.get("最小烈度", 0)
+                                    if _fm != 0 or _fi != 0:
+                                        _cur_ef[_fid] = _fcfg
+                            self.config["earthquake_filters"] = _cur_ef
+                        # groups: 补充命名群组（跳过 default）
+                        _file_grp = _file_cfg.get("groups")
+                        if isinstance(_file_grp, dict):
+                            _cur_grp = self.config.get("groups", {})
+                            if not isinstance(_cur_grp, dict):
+                                _cur_grp = {}
+                            for _gid, _gcfg in _file_grp.items():
+                                if _gid != "default" and _gid not in _cur_grp:
+                                    _cur_grp[_gid] = _gcfg
+                            self.config["groups"] = _cur_grp
+                        # 其他字段直接覆盖
+                        for _k in ("push_frequency_control", "sleep_earthquake_filters",
+                                   "message_format", "weather_config", "strategies",
                                    "debug_config", "local_monitoring", "websocket_config", "display_timezone"):
                             if _k in _file_cfg and isinstance(_file_cfg[_k], dict):
-                                _old = self.config.get(_k, {})
-                                if isinstance(_old, dict):
-                                    _merged = dict(_old)
-                                    _merged.update(_file_cfg[_k])
-                                    self.config[_k] = _merged
-                                else:
-                                    self.config[_k] = _file_cfg[_k]
+                                self.config[_k] = _file_cfg[_k]
                         logger.info(f"[Mix] 已从 {_cfg_path.name} 加载生产配置")
                         break
             except Exception as _e:
@@ -1049,7 +1070,7 @@ class MixDisasterWarningPlugin(Star):
             "usgs_weekly": ("https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_week.geojson", 10, False),
             # Wolfx HTTP（仅情报，EEW已禁用）
             # "jma_wolfx_http": ("https://api.wolfx.jp/jma_eew.json", 1, False),
-            "jma_wolfx_info_http": ("https://api.wolfx.jp/jma_eqlist.json", 1, False),
+            # "jma_wolfx_info_http": ("https://api.wolfx.jp/jma_eqlist.json", 1, False),
             # P2P HTTP 备用（EEW警报主源 + 情报）
             "jma_p2p_http": ("https://api.p2pquake.net/v2/history?codes=556&limit=1", 1, False),
             "jma_p2p_info_http": ("https://api.p2pquake.net/v2/jma/quake?limit=5", 1, False),
@@ -1939,10 +1960,28 @@ class MixDisasterWarningPlugin(Star):
                     chain.append(Image.fromBase64(base64.b64encode(f.read()).decode()))
 
         ev = target.event
-        # 烈度/震度图
-        if self._intensity_img_renderer and ev.magnitude is not None:
-            for p in self._intensity_img_renderer.render_both(ev.magnitude, ev.depth):
-                _img(p)
+        # 烈度/震度图：优先用实际最大震度
+        if self._intensity_img_renderer:
+            actual_shindo = None
+            if hasattr(ev, 'mmi') and ev.mmi is not None:
+                actual_shindo = ev.mmi
+            elif hasattr(ev, 'intensity_points') and ev.intensity_points:
+                max_s = max(
+                    (p.get("scale") for p in ev.intensity_points
+                     if isinstance(p, dict) and p.get("scale") is not None),
+                    default=None,
+                )
+                if max_s is not None:
+                    actual_shindo = max_s
+            if actual_shindo is not None:
+                from .message.presenters import _shindo_label_str
+                _img(self._intensity_img_renderer.render_shindo_actual(
+                    _shindo_label_str(actual_shindo), "最大震度"))
+            elif ev.magnitude is not None:
+                for p in self._intensity_img_renderer.render_both(ev.magnitude, ev.depth):
+                    _img(p)
+            else:
+                _img(self._intensity_img_renderer.render_shindo_actual("不明", "最大震度"))
 
         # NHK 双图
         if self._push_svc:
