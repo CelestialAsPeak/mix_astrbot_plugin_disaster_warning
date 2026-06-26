@@ -214,11 +214,12 @@ class PushExecutionService:
         img_ts = dt_iss.strftime("%Y%m%d%H%M%S")
 
         # ── 秒数地毯式扫描（5 HEAD/sec, 15s 超时）──
-        # 同时尝试 issue.time 和 issue.time+1s（不同事件偏移不同）
+        # 同时试 issue.time / +1s / +2s（偏移因事件/阶段而异）
         import datetime as _dt_mod
-        dt_img_plus1 = dt_iss + _dt_mod.timedelta(seconds=1)
-        img_ts_plus1 = dt_img_plus1.strftime("%Y%m%d%H%M%S")
-        ts_list = [img_ts, img_ts_plus1]
+        ts_list = [img_ts]
+        for off in (1, 2):
+            dt_off = dt_iss + _dt_mod.timedelta(seconds=off)
+            ts_list.append(dt_off.strftime("%Y%m%d%H%M%S"))
         logger.info(f"[NHK] 开始爆破 — 基准={base_ymdhms}XX 时间戳列表={[t[-6:] for t in ts_list]}")
         found = await self._scan_nhk_sec(base_ymdhms, ts_list)
         if found is None:
