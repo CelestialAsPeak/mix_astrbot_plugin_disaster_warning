@@ -139,6 +139,8 @@ _SOURCE_DISPLAY: dict[str, str] = {
     "cwa_fanstudio": "台湾气象署", "cwa_wolfx": "CWA(Wolfx)",
     "jma_fanstudio": "日本气象厅", "jma_wolfx": "JMA(Wolfx)", "jma_wolfx_info": "JMA情报(Wolfx)",
     "jma_wolfx_http": "JMA(Wolfx HTTP)", "jma_wolfx_info_http": "JMA情报(Wolfx HTTP)",
+    "cwa_wolfx_http": "CWA(Wolfx HTTP)", "kma_wolfx_http": "KMA(Wolfx HTTP)",
+    "sc_wolfx_http": "四川(Wolfx HTTP)", "fj_wolfx_http": "福建(Wolfx HTTP)", "cq_wolfx_http": "重庆(Wolfx HTTP)",
     "jma_p2p_http": "JMA(P2P HTTP)", "jma_p2p_info_http": "JMA情报(P2P HTTP)", "jma_tsunami_p2p_http": "JMA海啸(P2P HTTP)",
     "jma_p2p": "JMA(P2P)",
     "usgs_fanstudio": "USGS", "emsc_fanstudio": "EMSC",
@@ -875,10 +877,14 @@ class MixDisasterWarningPlugin(Star):
                     continue
                 source_data = data.get(key)
                 if isinstance(source_data, dict):
+                    # initial_all 包了 Data 层，需解包（FAN: {"Data": {...}, "md5": "..."}）
+                    inner = source_data.get("Data") or source_data.get("data") or source_data
+                    if not isinstance(inner, dict):
+                        continue
                     parser = ParserRegistry.get(sid)
                     if parser:
                         try:
-                            result = parser.parse_message(source_data)
+                            result = parser.parse_message(inner)
                             if result:
                                 for env in (result if isinstance(result, list) else [result]):
                                     if self.database:
@@ -1105,9 +1111,15 @@ class MixDisasterWarningPlugin(Star):
             "phivolcs_http": ("https://earthquake.phivolcs.dost.gov.ph/", 10, True),
             "csnc_http": ("https://www.sismologia.cl/index.html", 10, True),
             "usgs_weekly": ("https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_week.geojson", 10, False),
-            # Wolfx HTTP（仅情报，EEW已禁用）
-            # "jma_wolfx_http": ("https://api.wolfx.jp/jma_eew.json", 1, False),
-            # "jma_wolfx_info_http": ("https://api.wolfx.jp/jma_eqlist.json", 1, False),
+            # Wolfx HTTP EEW（按需轮询，查的时候即时抓）
+            "jma_wolfx_http": ("https://api.wolfx.jp/jma_eew.json", 86400, False),
+            "cwa_wolfx_http": ("https://api.wolfx.jp/cwa_eew.json", 86400, False),
+            "kma_wolfx_http": ("https://api.wolfx.jp/kma_eew.json", 86400, False),
+            "sc_wolfx_http": ("https://api.wolfx.jp/sc_eew.json", 86400, False),
+            "fj_wolfx_http": ("https://api.wolfx.jp/fj_eew.json", 86400, False),
+            "cq_wolfx_http": ("https://api.wolfx.jp/cq_eew.json", 86400, False),
+            # Wolfx HTTP 地震情报（备用）
+            "jma_wolfx_info_http": ("https://api.wolfx.jp/jma_eqlist.json", 86400, False),
             # P2P HTTP 备用（EEW警报主源 + 情报）
             "jma_p2p_http": ("https://api.p2pquake.net/v2/history?codes=556&limit=1", 1, False),
             "jma_p2p_info_http": ("https://api.p2pquake.net/v2/jma/quake?limit=5", 1, False),
@@ -1122,15 +1134,41 @@ class MixDisasterWarningPlugin(Star):
                     handler=self._handle_http_poll_result,
                     raw_text=raw_text,
                 )
-        # ICL（成都高新减灾研究所）— URL 仅在生产配置中设置，不在 Git 中
-        icl_url = self.config.get("icl_api_url", "") if hasattr(self, "config") else ""
+        # ICL（成都高新减灾研究所）— URL 仅在生产配置文件（AppData）中设置
+        icl_url = ""
+        try:
+            import json as _json
+            # 尝试多个路径：AppData 生产配置优先，dev 配置兜底
+            _paths = [
+                os.path.normpath(os.path.join(
+                    os.path.dirname(os.path.abspath(__file__)),
+                    "..", "..", "config", "mix_astrbot_plugin_disaster_warning_config.json"
+                )),
+                os.path.normpath(os.path.join(
+                    os.environ.get("LOCALAPPDATA", ""),
+                    "AstrBot", "data", "config", "mix_astrbot_plugin_disaster_warning_config.json"
+                )),
+            ]
+            for _p in _paths:
+                if not _p or not os.path.exists(_p):
+                    continue
+                with open(_p, encoding="utf-8-sig") as _f:  # utf-8-sig 兼容 BOM
+                    _d = _json.load(_f)
+                    icl_url = _d.get("icl_api_url", "") or ""
+                    if icl_url:
+                        logger.info(f"[ICL] 读取 ICL URL 成功")
+                        break
+                    else:
+                        logger.warning(f"[ICL] 配置中存在但为空: {_p}")
+        except Exception as _e:
+            logger.warning(f"[ICL] 读取配置失败: {_e}")
         if icl_url and "icl_http" in sources:
             self.http_poll_manager.add_poller(
-                name="icl_http", url=icl_url, interval=30,
+                name="icl_http", url=icl_url, interval=2,
                 handler=self._handle_http_poll_result,
                 raw_text=True, ssl=False,
             )
-            logger.info("[ICL] 已从配置加载 ICL 轮询器")
+            logger.info("[ICL] 已加载 ICL 轮询器")
 
     # ═══════════════════ 数据查询 ═══════════════════
 
@@ -1782,8 +1820,10 @@ class MixDisasterWarningPlugin(Star):
                 "funvisis_http", "cenais_http", "geonet_http", "nrcan_http",
                 "tmd_http", "phivolcs_http", "csnc_http", "usgs_weekly",
                 "jma_wolfx_http", "jma_wolfx_info_http",
+                "cwa_wolfx_http", "kma_wolfx_http",
+                "sc_wolfx_http", "fj_wolfx_http", "cq_wolfx_http",
                 "jma_p2p_http", "jma_p2p_info_http", "jma_tsunami_p2p_http",
-		"bmkg_http",
+		"bmkg_http", "icl_http",
             }
             if source_id in _HTTP_SOURCES and self.http_poll_manager:
                 logger.info(f"[查询] {source_id} DB 无数据，触发即时抓取")
@@ -2219,6 +2259,18 @@ class MixDisasterWarningPlugin(Star):
     async def q_yn(self, e):
         async for r in self._quick_query(e, "yunnan_fanstudio", "云南台网"): yield r
 
+    @filter.regex(r"^/(?:四川|sc)(?:\s|$)")
+    async def q_sc(self, e):
+        async for r in self._quick_query(e, "sc_wolfx_http", "四川地震预警"): yield r
+
+    @filter.regex(r"^/(?:福建|fj)(?:\s|$)")
+    async def q_fj(self, e):
+        async for r in self._quick_query(e, "fj_wolfx_http", "福建地震预警"): yield r
+
+    @filter.regex(r"^/(?:重庆|cq)(?:\s|$)")
+    async def q_cq(self, e):
+        async for r in self._quick_query(e, "cq_wolfx_http", "重庆地震预警"): yield r
+
     @filter.regex(r"^/tg(?:\s|$)")
     async def q_tg(self, e):
         async for r in self._quick_query(e, "tmd_http", "TMD"): yield r
@@ -2254,6 +2306,11 @@ class MixDisasterWarningPlugin(Star):
     @filter.regex(r"^/bmkg(?:\s|$)")
     async def q_bmkg(self, e):
         async for r in self._quick_query(e, "bmkg_http", "BMKG"): yield r
+
+    @filter.regex(r"^/icl(?:\s|$)")
+    async def q_icl(self, e):
+        """ICL 成都高新减灾研究所 — 查询最新地震预警。"""
+        async for r in self._quick_query(e, "icl_http", "ICL"): yield r
 
     @filter.regex(r"^/556(?:\s|$)")
     async def q_556(self, event: AstrMessageEvent):

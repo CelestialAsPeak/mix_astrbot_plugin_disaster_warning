@@ -1,33 +1,17 @@
 """
-Wolfx — EEW HTTP 轮询解析器（备用）。
+parser/wolfx/http_eew.py — Wolfx EEW HTTP 轮询解析器（通用版，支持多数据源）。
 
-数据源: jma_wolfx_http
+数据源: jma_wolfx_http, cwa_wolfx_http, kma_wolfx_http
+       sc_wolfx_http, fj_wolfx_http, cq_wolfx_http
+
 API: https://api.wolfx.jp/jma_eew.json
-格式: 单条 JSON，PascalCase 字段（与 WS 格式不同！）
+     https://api.wolfx.jp/cwa_eew.json
+     https://api.wolfx.jp/kma_eew.json
+     https://api.wolfx.jp/sc_eew.json
+     https://api.wolfx.jp/fj_eew.json
+     https://api.wolfx.jp/cq_eew.json
 
-Wolfx HTTP EEW endpoint 返回 PascalCase JSON:
-{
-  "Title": "緊急地震速報（予報）",
-  "CodeType": "...",
-  "Issue": {"Source": "東京", "Status": "通常"},
-  "EventID": "20260624133147",
-  "Serial": 4,
-  "AnnouncedTime": "2026/06/24 13:32:27",
-  "OriginTime": "2026/06/24 13:31:43",
-  "Hypocenter": "福島県会津",
-  "Latitude": 37.0,
-  "Longitude": 139.4,
-  "Magunitude": 3.5,        ← API typo，实际字段名
-  "Depth": 10,
-  "MaxIntensity": "2",
-  "Accuracy": {...},
-  "WarnArea": [],
-  "isSea": false,
-  "isTraining": false,
-  "isAssumption": false,
-  "isFinal": true,
-  "isCancel": false,
-}
+格式: 单条 JSON，PascalCase 字段
 """
 
 from __future__ import annotations
@@ -41,16 +25,19 @@ try:
     from ..base import BaseParser
     from ..registry import ParserRegistry
     from ...utils.convert import to_float, to_int, to_str
-
 except ImportError:
     from parser.base import BaseParser
     from parser.registry import ParserRegistry
     from utils.convert import to_float, to_int, to_str
 
+try:
+    from astrbot.api import logger
+except ImportError:
+    import logging as logger
 
-@ParserRegistry.register("jma_wolfx_http")
-class WolfxJmaEewHttpParser(BaseParser):
-    """Wolfx JMA EEW HTTP 解析器（PascalCase 格式）。"""
+
+class _WolfxEewHttpParserBase(BaseParser):
+    """Wolfx EEW HTTP 通用解析器基类（PascalCase 格式）。"""
 
     def parse(self, raw: dict) -> list[EventEnvelope] | None:
         if not isinstance(raw, dict):
@@ -63,7 +50,6 @@ class WolfxJmaEewHttpParser(BaseParser):
         occurred_at = self._parse_datetime(raw.get("OriginTime", raw.get("shockTime", "")))
         report_num = to_int(raw.get("Serial", 1)) or 1
 
-        # "Magunitude" 是 Wolfx API 的原始字段名（typo）
         mag = to_float(raw.get("Magunitude")) or to_float(raw.get("magnitude"))
         max_int = str(raw.get("MaxIntensity", "") or "")
         warn_areas = raw.get("WarnArea", raw.get("warnAreas"))
@@ -76,7 +62,7 @@ class WolfxJmaEewHttpParser(BaseParser):
             longitude=to_float(raw.get("Longitude")),
             depth=to_float(raw.get("Depth")),
             magnitude=mag,
-            place_name=str(raw.get("Hypocenter", "") or ""),
+            place_name=str(raw.get("Hypocenter", raw.get("Hypocenter", "")) or ""),
             max_intensity=max_int,
             serial=report_num,
             is_final=bool(raw.get("isFinal", False)),
@@ -104,3 +90,9 @@ class WolfxJmaEewHttpParser(BaseParser):
             event=event,
             payload=SourcePayload(source_id=self.source_id, provider_family="wolfx", raw=raw),
         )]
+
+
+# 逐个注册各数据源（同一解析逻辑，不同 source_id）
+for _sid in ["jma_wolfx_http", "cwa_wolfx_http", "kma_wolfx_http",
+             "sc_wolfx_http", "fj_wolfx_http", "cq_wolfx_http"]:
+    ParserRegistry.register(_sid)(type(f"WolfxEewHttpParser_{_sid}", (_WolfxEewHttpParserBase,), {}))

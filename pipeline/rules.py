@@ -198,6 +198,9 @@ class EarthquakeThresholdRule(BaseRule):
         "icl_http": "icl_filter",
         "sc_wolfx_eew": "sc_eew_filter", "fj_wolfx_eew": "fj_eew_filter",
         "cq_wolfx_eew": "cq_eew_filter",
+        "cwa_wolfx_http": "cwa_scale_filter", "kma_wolfx_http": "kma_eew_filter",
+        "sc_wolfx_http": "sc_eew_filter", "fj_wolfx_http": "fj_eew_filter",
+        "cq_wolfx_http": "cq_eew_filter",
         # JMA/CWA 震度过滤器
         "jma_fanstudio": "jma_scale_filter", "jma_wolfx": "jma_scale_filter",
         "jma_wolfx_info": "jma_scale_filter", "jma_p2p": "jma_scale_filter",

@@ -31,12 +31,14 @@ class CWAEEWParser(BaseParser):
         if self._is_heartbeat(raw):
             return []
 
-        event_id = to_str(raw.get("eventId")) or ""
+        # FAN CWA EEW 字段: id, updates, shockTime, latitude, longitude,
+        # depth, magnitude, placeName, locationDesc (无 reportIntensity/maxIntensity)
+        event_id = to_str(raw.get("id")) or to_str(raw.get("eventId")) or ""
         if not event_id:
             return None
 
-        occurred_at = self._parse_datetime(raw.get("reportTime", raw.get("shockTime", "")))
-        report_num = to_int(raw.get("reportNum", raw.get("updates", 1))) or 1
+        occurred_at = self._parse_datetime(raw.get("shockTime", ""))
+        report_num = to_int(raw.get("updates", 1)) or 1
 
         event = EewEvent(
             source_id=self.source_id,
@@ -47,9 +49,8 @@ class CWAEEWParser(BaseParser):
             depth=to_float(raw.get("depth")),
             magnitude=to_float(raw.get("magnitude")),
             place_name=str(raw.get("placeName", "") or ""),
-            max_intensity=str(raw.get("reportIntensity", "") or ""),
+            max_intensity=None,  # CWA EEW 不提供烈度/震度
             serial=report_num,
-            is_final=bool(raw.get("isFinal", False)),
             report_num=report_num,
             raw=raw,
         )
