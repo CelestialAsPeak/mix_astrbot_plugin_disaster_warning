@@ -1603,11 +1603,11 @@ class MixDisasterWarningPlugin(Star):
 
     # ── /盼震 命令（BAK 版移植，多别名） ──
 
-    @filter.regex(r"^/(?:盘阵|磐震|潘振|盼震|earth)(?:\s|$)")
+    @filter.regex(r"^/(?:[盼畔叛判拚潘攀盘磐蟠蹒槃鞶][震振镇阵圳朕鸩赈真针珍贞侦斟甄箴砧祯桢诊枕疹缜轸]|earth)(?:\s|$)")
     async def eew_pending_cmd(self, event: AstrMessageEvent):
         try:
             text = await self._get_eew_status_text()
-            yield event.plain_result(text)
+            yield event.plain_result(f"正在盘阵中！\n{text}")
         except Exception as ex:
             logger.error(f"[盼震] 异常: {ex}", exc_info=True)
             yield event.plain_result(f"❌ 查询失败: {ex}")

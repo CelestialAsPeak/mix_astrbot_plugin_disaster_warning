@@ -48,7 +48,7 @@
     "connection_url": "wss://ws.fanstudio.tech/all",
     "connection_backup_url": "wss://ws.fanstudio.hk/all",
     "institution_key": "cea",
-    "institution_display_name": "CEA 中国地震预警网 地震预警",
+    "institution_display_name": "CEA 中国地震预警网 EEW",
     "institution_active_name": "中国地震预警网",
     "institution_active_name": "中国地震预警网",
     "query_group": "eew",
@@ -139,7 +139,7 @@
     "connection_url": "wss://ws.fanstudio.tech/all",
     "connection_backup_url": "wss://ws.fanstudio.hk/all",
     "institution_key": "cwa",
-    "institution_display_name": "CWA 地震速报 EEW",
+    "institution_display_name": "台湾中央氣象署 EEW",
     "query_group": "eew",
     "dispatch_family": "fan_studio_eew",
     "provider_source_names": [
@@ -486,7 +486,7 @@
     "connection_url": "wss://ws.fanstudio.tech/all",
     "connection_backup_url": "wss://ws.fanstudio.hk/all",
     "institution_key": "kma",
-    "institution_display_name": "KMA EEW",
+    "institution_display_name": "韩国气象厅 EEW",
     "query_group": "eew",
     "dispatch_family": "fan_studio_eew",
     "provider_source_names": [
@@ -876,7 +876,7 @@
     "display_name": "四川省地震局(Wolfx HTTP)",
     "default_timezone": "Asia/Shanghai",
     "institution_key": "sc",
-    "institution_display_name": "四川地震局 地震预警",
+    "institution_display_name": "四川地震局 EEW",
     "query_group": "eew",
     "dispatch_family": "wolfx_eew"
   },
@@ -892,7 +892,7 @@
     "display_name": "福建省地震局(Wolfx HTTP)",
     "default_timezone": "Asia/Shanghai",
     "institution_key": "fj",
-    "institution_display_name": "福建地震局 地震预警",
+    "institution_display_name": "福建地震局 EEW",
     "query_group": "eew",
     "dispatch_family": "wolfx_eew"
   },
@@ -908,7 +908,7 @@
     "display_name": "重庆市地震局(Wolfx HTTP)",
     "default_timezone": "Asia/Shanghai",
     "institution_key": "cq",
-    "institution_display_name": "重庆地震局 地震预警",
+    "institution_display_name": "重庆地震局 EEW",
     "query_group": "eew",
     "dispatch_family": "wolfx_eew"
   },
@@ -952,7 +952,7 @@
     "connection_handler": "wolfx",
     "connection_url": "wss://ws-api.wolfx.jp/all_eew",
     "institution_key": "sc",
-    "institution_display_name": "四川地震预警 EEW",
+    "institution_display_name": "四川地震局 EEW",
     "query_group": "eew",
     "dispatch_family": "wolfx_eew",
     "routing_tags": [
@@ -978,7 +978,7 @@
     "connection_handler": "wolfx",
     "connection_url": "wss://ws-api.wolfx.jp/all_eew",
     "institution_key": "fj",
-    "institution_display_name": "福建地震预警 EEW",
+    "institution_display_name": "福建地震局 EEW",
     "query_group": "eew",
     "dispatch_family": "wolfx_eew",
     "routing_tags": [
@@ -1004,7 +1004,7 @@
     "connection_handler": "wolfx",
     "connection_url": "wss://ws-api.wolfx.jp/all_eew",
     "institution_key": "cq",
-    "institution_display_name": "重庆地震预警 EEW",
+    "institution_display_name": "重庆地震局 EEW",
     "query_group": "eew",
     "dispatch_family": "wolfx_eew",
     "routing_tags": [
@@ -1392,7 +1392,7 @@
     "default_timezone": "Asia/Shanghai",
     "institution_key": "icl",
     "code_override": "ICL",
-    "institution_display_name": "ICL 成都高新减灾研究所 大陆地震预警网地震预警",
+    "institution_display_name": "ICL",
     "institution_active_name": "ICL 成都高新减灾研究所",
     "query_group": "eew",
     "metadata": {
