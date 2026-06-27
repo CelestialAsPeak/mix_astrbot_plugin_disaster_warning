@@ -113,6 +113,8 @@ class GlobalQuakeParser(BaseParser):
                 "max": eq.depth_confidence.max_depth,
             }
 
+        is_final_val = bool(eq.is_final) if hasattr(eq, "is_final") else None
+
         event = EewEvent(
             source_id=self.source_id,
             event_id=str(eq.id),
@@ -124,6 +126,7 @@ class GlobalQuakeParser(BaseParser):
             place_name=place_name,
             max_intensity=intensity_raw,
             report_num=report_num,
+            is_final=is_final_val,
             raw={
                 "protobuf": True,
                 "id": eq.id,
@@ -141,6 +144,7 @@ class GlobalQuakeParser(BaseParser):
             event_type="eew",
             provider_family="global_quake",
             report_num=report_num,
+            is_final=is_final_val,
         )
 
         metadata = {

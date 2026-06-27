@@ -2638,6 +2638,64 @@ class MixDisasterWarningPlugin(Star):
 
         yield e.plain_result(text)
 
+    # ═══════════════════ /nan shen 恶搞指令 ═══════════════════
+
+    @filter.regex(r"^/(?:[男南难楠喃赧腩蝻囡][申伸身深呻绅砷莘神什审婶沈谂甚肾慎渗蜃生声升牲笙甥绳省胜圣盛剩])(?:\s|$)")
+    async def q_nan_shen(self, e: AstrMessageEvent):
+        """/nan shen（及同音字）— 恶搞指令：SNET 震度7 + 全屏地震预警"""
+        import io, base64, random
+        from datetime import datetime, timezone
+        from PIL import Image as PILImage
+
+        # 获取触发者名字
+        try:
+            sender_name = e.get_sender_name() or "未知用户"
+        except Exception:
+            sender_name = "未知用户"
+
+        # ── 1. 执行 S-Net 震度 7 ──
+        try:
+            from .parser.snet import SNET_REAL_COORDS
+            from .message.render.snet_map_renderer import MSIL_SHINDO_TO_RGB
+        except ImportError:
+            from parser.snet import SNET_REAL_COORDS
+            from message.render.snet_map_renderer import MSIL_SHINDO_TO_RGB
+
+        val = 7.0
+        key = round(val * 10)
+        rgb = MSIL_SHINDO_TO_RGB.get(key, (63, 250, 54))
+        stations = [
+            {"name": nm, "lat": lat, "lon": lon, "shindo": val, "rgb": rgb}
+            for nm, (lat, lon) in SNET_REAL_COORDS.items()
+        ]
+        ts_str = datetime.now(timezone.utc).strftime("%Y%m%d%H%M00")
+
+        # 渲染 SNET 图
+        if self._snet_renderer:
+            try:
+                img_path = os.path.join(
+                    self._temp_dir,
+                    f"nanshen_{int(__import__('time').time())}.png",
+                )
+                out = await self._snet_renderer.render(stations, img_path, ts_str)
+                if out and os.path.exists(out):
+                    with open(out, "rb") as f:
+                        b64 = base64.b64encode(f.read()).decode()
+                    try:
+                        os.unlink(out)
+                    except Exception:
+                        pass
+                    yield e.chain_result([
+                        Image.fromBase64(b64),
+                        Plain(f"{sender_name} 正在发布地震预警！M9.0!滚木！"),
+                    ])
+                    return
+            except Exception as ex:
+                logger.warning(f"[nan shen] 渲染异常: {ex}")
+
+        # 渲染失败时纯文本兜底
+        yield e.plain_result(f"{sender_name} 正在发布地震预警！M9.0!滚木！")
+
     # ── BAK 版迁移的缺失快捷指令 ──
 
     @filter.regex(r"^/kma_eew(?:\s|$)")

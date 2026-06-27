@@ -84,7 +84,17 @@ class IclParser(BaseParser):
             if env is not None:
                 results.append(env)
 
-        return results if results else None
+        if not results:
+            return None
+
+        # API 返回最新在前，DB ORDER BY id DESC 取最后入库的。
+        # 反转成最旧在前，确保最新事件最后入库（最高 id）→ 被查询最先返回。
+        results.sort(
+            key=lambda e: (e.identity.published_at or datetime.min).timestamp()
+            if e.identity.published_at else 0,
+            reverse=False,
+        )
+        return results
 
     def _parse_item(self, item: dict[str, Any]) -> EventEnvelope | None:
         """解析单条 ICL 预警数据 → EventEnvelope(EewEvent)。"""
