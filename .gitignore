@@ -31,3 +31,7 @@ temp/
 *.jpg
 test_*.py
 cache/
+
+# Project files
+CLAUDE.md
+MEMORY.md
