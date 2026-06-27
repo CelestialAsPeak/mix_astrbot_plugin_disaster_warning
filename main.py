@@ -346,15 +346,51 @@ class MixDisasterWarningPlugin(Star):
                                     _cur_grp[_gid] = _gcfg
                             self.config["groups"] = _cur_grp
                         # 其他字段直接覆盖
-                        for _k in ("push_frequency_control", "sleep_earthquake_filters",
+                        for _k in ("push_frequency_control",
                                    "message_format", "weather_config", "strategies",
                                    "debug_config", "local_monitoring", "websocket_config", "display_timezone"):
                             if _k in _file_cfg and isinstance(_file_cfg[_k], dict):
                                 self.config[_k] = _file_cfg[_k]
+                        # sleep_earthquake_filters: 用文件值覆盖，但跳过全是 0/默认值的条目
+                        # （AstrBot 持久化bug导致嵌套 schema 的 default 覆盖用户设置）
+                        _file_sleep = _file_cfg.get("sleep_earthquake_filters")
+                        if isinstance(_file_sleep, dict):
+                            _cur_sleep = self.config.get("sleep_earthquake_filters", {})
+                            if not isinstance(_cur_sleep, dict):
+                                _cur_sleep = {}
+                            for _fid, _fcfg in _file_sleep.items():
+                                if _fid not in _cur_sleep:
+                                    _cur_sleep[_fid] = _fcfg
+                                elif isinstance(_fcfg, dict):
+                                    _fm = _fcfg.get("min_magnitude", 0)
+                                    _fi = _fcfg.get("最小烈度", 0)
+                                    if _fm != 0 or _fi != 0:
+                                        _cur_sleep[_fid] = _fcfg
+                            self.config["sleep_earthquake_filters"] = _cur_sleep
+                            # 调试日志：追踪 GQ sleep filter 值
+                            _gq_sleep = _cur_sleep.get("global_quake_filter", {})
+                            if isinstance(_gq_sleep, dict):
+                                logger.info(f"[Mix] sleep GQ 最小烈度 = {_gq_sleep.get('最小烈度', '未配置')} "
+                                            f"(文件值={_file_sleep.get('global_quake_filter', {}).get('最小烈度', 'N/A')})")
                         logger.info(f"[Mix] 已从 {_cfg_path.name} 加载生产配置")
                         break
             except Exception as _e:
                 logger.warning(f"[Mix] 无法从文件加载生产配置: {_e}")
+
+            # ── sleep_earthquake_filters: 从独立文件加载（绕过 AstrBot 配置持久化 bug）──
+            self._sleep_filters_path = self._get_storage_path() / "sleep_filters.json"
+            try:
+                if self._sleep_filters_path.exists():
+                    with open(self._sleep_filters_path, encoding="utf-8") as _sf:
+                        _sf_data = json.load(_sf)
+                    if isinstance(_sf_data, dict) and _sf_data:
+                        self.config["sleep_earthquake_filters"] = _sf_data
+                        logger.info(f"[Mix] 已从 sleep_filters.json 加载睡眠阈值")
+                        _gq = _sf_data.get("global_quake_filter", {})
+                        if isinstance(_gq, dict):
+                            logger.info(f"[Mix] sleep GQ 最小烈度（独立文件）= {_gq.get('最小烈度', '未配置')}")
+            except Exception as _e:
+                logger.warning(f"[Mix] 加载 sleep_filters.json 失败: {_e}")
 
             self.database = DatabaseManager(self._get_storage_path() / "events.db")
             await self.database.initialize()
@@ -1379,6 +1415,61 @@ class MixDisasterWarningPlugin(Star):
             yield event.plain_result(f"✅ 已清除群组 {group_id} 的 {source_id} 阈值覆盖")
         else:
             yield event.plain_result(f"✅ 已清除群组 {group_id} 的所有阈值覆盖")
+
+    # ═══════════════════ 命令: 睡眠阈值（独立文件，绕过 AstrBot 配置 bug） ═══════════════════
+
+    @filter.regex(r"^/灾害预警睡眠阈值\s+(\S+)\s+(\S+)\s+([\d.]+)(?:\s|$)")
+    async def sleep_threshold_set_cmd(
+        self, event: AstrMessageEvent,
+        filter_id: str, field: str, value: str,
+    ):
+        """设置睡眠模式过滤阈值（存独立文件，不受 AstrBot 配置污染）。
+        用法: /灾害预警睡眠阈值 global_quake_filter 最小烈度 8.0
+        """
+        if not await self._is_admin(event):
+            yield event.plain_result("❌ 仅管理员")
+            return
+
+        try:
+            val = float(value)
+        except ValueError:
+            yield event.plain_result(f"❌ 无效值: {value}")
+            return
+
+        # 读现有文件
+        sf_data = {}
+        if self._sleep_filters_path and self._sleep_filters_path.exists():
+            try:
+                with open(self._sleep_filters_path, encoding="utf-8") as _sf:
+                    sf_data = json.load(_sf)
+            except Exception:
+                sf_data = {}
+        if not isinstance(sf_data, dict):
+            sf_data = {}
+
+        # 写入
+        if filter_id not in sf_data or not isinstance(sf_data[filter_id], dict):
+            sf_data[filter_id] = {}
+        sf_data[filter_id][field] = val
+
+        # 存回文件
+        try:
+            self._sleep_filters_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(self._sleep_filters_path, "w", encoding="utf-8") as _sf:
+                json.dump(sf_data, _sf, ensure_ascii=False, indent=2)
+        except Exception as e:
+            yield event.plain_result(f"❌ 写入失败: {e}")
+            return
+
+        # 覆盖运行时 config 并重建 SessionConfigManager
+        self.config["sleep_earthquake_filters"] = sf_data
+        self.session_config_manager = SessionConfigManager(dict(self.config))
+        logger.info(f"[Mix] 睡眠阈值已更新: {filter_id}.{field}={val}")
+
+        yield event.plain_result(
+            f"✅ 睡眠阈值已设置: {filter_id}.{field}={val}\n"
+            f"📁 独立文件: {self._sleep_filters_path}"
+        )
 
     # ═══════════════════ 命令: 查询 ═══════════════════
 

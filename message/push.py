@@ -31,9 +31,11 @@ except ImportError:
 try:
     from ..domain.models import EventEnvelope, EewEvent, EarthquakeReport
     from ..message.presenters import present
+    from ..message.big_earthquake_alert import BigEarthquakeAlertService
 except ImportError:
     from domain.models import EventEnvelope, EewEvent, EarthquakeReport
     from message.presenters import present
+    from message.big_earthquake_alert import BigEarthquakeAlertService
 
 
 class SessionSender:
@@ -69,6 +71,8 @@ class PushExecutionService:
         # NHK 图缓存: {source_id|event_id → [b64, b64] | None} 避免重复爆破
         self._nhk_cache: dict[str, list[str] | None] = {}
         self._nhk_cache_max = 128
+        # 大地震大喇叭提醒
+        self.big_alert_service = BigEarthquakeAlertService(config)
 
     async def _render_event_map(self, envelope: EventEnvelope) -> list[str] | None:
         """渲染震中地图（缩略图 + 细节图），返回 base64 列表。"""
@@ -451,7 +455,7 @@ class PushExecutionService:
 
                 elif isinstance(envelope.event, EarthquakeReport) and self.intensity_img_renderer:
                     ev = envelope.event
-                    # ── JMA 报告源：用实际震度渲染图片（不用 CSIS 估算）──
+                    # ── JMA / CWA 报告源：用实际震度渲染图片（不用 CSIS 估算）──
                     if ev.source_id in ("jma_p2p_info", "jma_p2p_info_http"):
                         # 取实际最大震度：优先 mmi，其次 intensity_points
                         actual_shindo = None
@@ -481,6 +485,19 @@ class PushExecutionService:
                             if map_b64_list:
                                 for b64 in map_b64_list:
                                     chain_components.append(Image.fromBase64(b64))
+                    elif ev.source_id == "cwa_report_fanstudio":
+                        # CWA 报告：从 raw 取 maxIntensity（如 "3級"）
+                        raw_cwa = ev.raw if isinstance(ev.raw, dict) else {}
+                        cwa_intensity = str(raw_cwa.get("maxIntensity", "") or "")
+                        if cwa_intensity:
+                            _img(self.intensity_img_renderer.render_shindo_actual(
+                                cwa_intensity, "最大震度"))
+                        else:
+                            _img(self.intensity_img_renderer.render_shindo_actual("不明", "最大震度"))
+                        map_b64_list = await self._render_event_map(envelope)
+                        if map_b64_list:
+                            for b64 in map_b64_list:
+                                chain_components.append(Image.fromBase64(b64))
                     else:
                         # 非 JMA 源：震度+烈度图 + 方位图（原逻辑）
                         if ev.magnitude is not None:
@@ -516,6 +533,18 @@ class PushExecutionService:
                 result = await self.sender.send(session_id, message)
                 if result:
                     success = True
+
+            # ── 大地震大喇叭提醒（仅在推送成功后触发） ──
+            if success and self.big_alert_service.should_alert(envelope):
+                alert_text = self.big_alert_service.get_alert_message()
+                alert_count = self.big_alert_service.get_alert_count()
+                logger.info(f"[Push] 🚨 大地震大喇叭提醒 {alert_count} 次，目标 {len(sessions)} 会话")
+                for i in range(alert_count):
+                    for session_id in sessions:
+                        try:
+                            await self.sender.send(session_id, alert_text)
+                        except Exception as e:
+                            logger.error(f"[Push] 大喇叭第 {i+1} 次发送失败: {e}")
 
             return success
 

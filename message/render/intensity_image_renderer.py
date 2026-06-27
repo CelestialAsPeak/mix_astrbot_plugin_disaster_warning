@@ -77,8 +77,13 @@ def _normalize_shindo(label: str) -> str:
       - "震度0"～"震度4"         → "0"～"4"
     """
     s = label.strip()
+    # 全角数字 → 半角（防日语/繁体全角字符）
+    trans_tbl = str.maketrans("０１２３４５６７８９", "0123456789")
+    s = s.translate(trans_tbl)
     # 去掉 "震度" 前缀
     s = s.replace("震度", "")
+    # CWA "3級" → "3"（繁体級 = 简体级）
+    s = s.replace("級", "")
     # 中文字 → 符号
     s = s.replace("弱", "-").replace("強", "+").replace("强", "+")
     # 直接命中

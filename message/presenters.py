@@ -463,6 +463,13 @@ def present_earthquake_report(event: EarthquakeReport) -> str:
                 lines.append(_field("预估最大烈度", "不明"))
                 lines.append(_field("预估最大震度", "不明"))
 
+    # ── CWA 报告：从 raw 取实际 maxIntensity ──
+    if event.source_id == "cwa_report_fanstudio":
+        raw_cwa = event.raw if isinstance(event.raw, dict) else {}
+        cwa_intensity = str(raw_cwa.get("maxIntensity", "") or "")
+        if cwa_intensity:
+            lines.append(_field("最大震度", cwa_intensity))
+
     # ── JMA 震度观测点：按震度分组、按地区合并（对齐 CAPQuake Qt） ──
     if is_jma_p2p and event.intensity_points:
         pts = event.intensity_points

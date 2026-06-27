@@ -241,6 +241,18 @@
     "final_report_always_push": true,
     "ignore_non_final_reports": false
   },
+  "big_earthquake_alert": {
+    "enabled": true,
+    "alert_count": 5,
+    "alert_text": "我草大大大喵！\n我草大大大喵！\n@WhiteH2UwU @AbeRyota @CO酷炫赛文 @澈瓦多黎 @CelestialAsPeak @Flanker @ISAER @初玩速通的dream @堪察加半岛 @可能因高考患上抑郁症 @群主的奶茶粉儿 @U233软糯猫猫 @WhiteH2UwU @WhiteO2白氧 @你已被移出群聊　　　　　　　　　　　　　 @⁶ @夜幕百里 @碳平衡 @月が綺麗ねと言われたい! @仰望星空的航 @AbeRyota",
+    "thresholds": {
+      "cea": 5.0,
+      "cea_xinjiang": 6.0,
+      "jma": 6.0,
+      "cwa": 5.5,
+      "gq": 7.0
+    }
+  },
   "local_monitoring": {
     "enabled": false,
     "latitude": 39.9042,

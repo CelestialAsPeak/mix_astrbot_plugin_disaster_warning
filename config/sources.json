@@ -201,7 +201,7 @@
     ],
     "payload_signatures": [
       [
-        "intensity",
+        "epiIntensity",
         "eventId",
         "updates"
       ]

@@ -187,7 +187,7 @@ class EarthquakeThresholdRule(BaseRule):
         "shanxi_fanstudio": "shanxi_filter", "beijing_fanstudio": "beijing_filter",
         "yunnan_fanstudio": "yunnan_filter",
         "geonet_http": "geonet_filter", "nrcan_http": "nrcan_filter",
-        "usgs_weekly": "usgs_weekly_filter",
+        "usgs_fanstudio": "usgs_weekly_filter", "usgs_weekly": "usgs_weekly_filter",
         "funvisis_http": "funvisis_filter", "cenais_http": "cenais_filter",
         "csnc_http": "csnc_filter", "tmd_http": "tmd_filter",
         "phivolcs_http": "phivolcs_filter",

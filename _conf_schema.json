@@ -1458,6 +1458,97 @@
       }
     }
   },
+  "big_earthquake_alert": {
+    "description": "🚨 大地震大喇叭提醒",
+    "type": "object",
+    "hint": "当高震级 EEW 通过推送时，连续发送 N 次提醒消息 @全员。\n同一源同一地震只触发一次。\n触发条件：CEA≥5.0(新疆≥6.0) / JMA≥6.0 / CWA≥5.5 / GQ≥7.0",
+    "items": {
+      "enabled": {
+        "description": "启用大地震大喇叭提醒",
+        "type": "bool",
+        "default": true
+      },
+      "alert_count": {
+        "description": "连续发送次数",
+        "type": "int",
+        "hint": "地震达标时连续发送提醒的次数",
+        "default": 5,
+        "slider": {
+          "min": 1,
+          "max": 20,
+          "step": 1
+        }
+      },
+      "alert_text": {
+        "description": "提醒文本",
+        "type": "string",
+        "hint": "连续发送的提醒消息内容。支持 @提及 和 换行",
+        "default": "我草大大大喵！\n我草大大大喵！\n@WhiteH2UwU @AbeRyota @CO酷炫赛文 @澈瓦多黎 @CelestialAsPeak @Flanker @ISAER @初玩速通的dream @堪察加半岛 @可能因高考患上抑郁症 @群主的奶茶粉儿 @U233软糯猫猫 @WhiteH2UwU @WhiteO2白氧 @你已被移出群聊　　　　　　　　　　　　　 @⁶ @夜幕百里 @碳平衡 @月が綺麗ねと言われたい! @仰望星空的航 @AbeRyota"
+      },
+      "thresholds": {
+        "description": "震级阈值（各源组独立设置）",
+        "type": "object",
+        "hint": "各源组触发大喇叭的最小震级",
+        "items": {
+          "cea": {
+            "description": "CEA 中国地震预警网阈值",
+            "type": "float",
+            "hint": "CEA EEW 震级≥此值时触发大喇叭",
+            "default": 5.0,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            }
+          },
+          "cea_xinjiang": {
+            "description": "CEA 新疆特殊阈值",
+            "type": "float",
+            "hint": "地名含新疆时使用此阈值（通常比常规阈值高）",
+            "default": 6.0,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            }
+          },
+          "jma": {
+            "description": "JMA 日本气象厅 EEW 阈值",
+            "type": "float",
+            "hint": "JMA EEW 震级≥此值时触发大喇叭",
+            "default": 6.0,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            }
+          },
+          "cwa": {
+            "description": "CWA 台湾中央气象署 EEW 阈值",
+            "type": "float",
+            "hint": "CWA EEW 震级≥此值时触发大喇叭",
+            "default": 5.5,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            }
+          },
+          "gq": {
+            "description": "GlobalQuake EEW 阈值",
+            "type": "float",
+            "hint": "GlobalQuake EEW 震级≥此值时触发大喇叭",
+            "default": 7.0,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            }
+          }
+        }
+      }
+    }
+  },
   "local_monitoring": {
     "description": "📍 本地烈度监控配置",
     "type": "object",
