@@ -1110,7 +1110,7 @@ class MixDisasterWarningPlugin(Star):
             # P2P HTTP 备用（EEW警报主源 + 情报）
             "jma_p2p_http": ("https://api.p2pquake.net/v2/history?codes=556&limit=1", 1, False),
             "jma_p2p_info_http": ("https://api.p2pquake.net/v2/jma/quake?limit=5", 1, False),
-            "jma_tsunami_p2p_http": ("https://api.p2pquake.net/v2/history?codes=552&limit=1", 1, False),
+            "jma_tsunami_p2p_http": ("https://api.p2pquake.net/v2/history?codes=552&limit=1", 60, False),
         }
         for sid, (url, interval, raw_text) in POLLERS.items():
             if sid in sources:
