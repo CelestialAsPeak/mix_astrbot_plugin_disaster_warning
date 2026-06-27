@@ -298,6 +298,11 @@
             "type": "bool",
             "default": false
           },
+          "bmkg": {
+            "description": "BMKG 印尼气象局地震报告",
+            "type": "bool",
+            "default": false
+          },
           "snet": {
             "description": "NIED S-Net 海底震度分布",
             "type": "bool",
@@ -1398,6 +1403,39 @@
             "description": "最小烈度（中国标准烈度，0-12级）",
             "type": "float",
             "default": 4.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
+          }
+        }
+      },
+      "bmkg_filter": {
+        "description": "BMKG 印尼专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 4.0,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 3.0,
             "slider": {
               "min": 0,
               "max": 12,
@@ -2878,6 +2916,39 @@
             "description": "最小烈度（中国标准烈度，0-12级）",
             "type": "float",
             "default": 4.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
+          }
+        }
+      },
+      "bmkg_filter": {
+        "description": "BMKG 印尼专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 4.0,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 3.0,
             "slider": {
               "min": 0,
               "max": 12,

@@ -686,3 +686,142 @@ class UsgsWeeklyParser(BaseParser):
                 event=event,
             ))
         return results if results else None
+# -- BMKG (Indonesia) --
+
+
+_MMI_ROMAN: dict[str, int] = {
+    "I": 1, "II": 2, "III": 3, "IV": 4, "V": 5,
+    "VI": 6, "VII": 7, "VIII": 8, "IX": 9, "X": 10,
+    "XI": 11, "XII": 12,
+}
+
+
+@ParserRegistry.register("bmkg_http")
+class BmkgParser(BaseParser):
+    def parse(self, raw: any) -> list[EventEnvelope] | None:
+        if not isinstance(raw, dict):
+            return None
+        infogempa = raw.get("Infogempa", {})
+        if not isinstance(infogempa, dict):
+            return None
+        gempa_list = infogempa.get("gempa", [])
+        if not isinstance(gempa_list, list) or not gempa_list:
+            return None
+        # API 返回最新在前，反转使最新在地震最后入库（DB id DESC 取最新）
+        gempa_list = list(reversed(gempa_list))
+        results = []
+        for item in gempa_list:
+            if not isinstance(item, dict):
+                continue
+            env = self._parse_item(item)
+            if env:
+                results.append(env)
+        return results if results else None
+
+    def _parse_item(self, item: dict) -> EventEnvelope | None:
+        occurred_at = self._parse_datetime(item.get("DateTime", ""))
+        if not occurred_at:
+            return None
+
+        coords_str = str(item.get("Coordinates", "") or "").strip()
+        lat, lon = None, None
+        if coords_str and "," in coords_str:
+            parts = coords_str.split(",", 1)
+            lat = to_float(parts[0])
+            lon = to_float(parts[1])
+
+        magnitude = to_float(item.get("Magnitude"))
+        if magnitude is None:
+            return None
+
+        depth_str = str(item.get("Kedalaman", "") or "").strip()
+        depth = None
+        if depth_str:
+            m = re.search(r"([\d.]+)", depth_str.replace(",", "."))
+            if m:
+                depth = to_float(m.group(1))
+
+        place_name = str(item.get("Wilayah", "") or "").strip() or None
+        dirasakan = str(item.get("Dirasakan", "") or "").strip() or None
+        mmi_val = _parse_max_mmi(dirasakan) if dirasakan else None
+
+        ts_part = occurred_at.strftime("%Y%m%d%H%M%S") if occurred_at else "unknown"
+        event_id = "bmkg_%s_%.2f_%.2f" % (ts_part, abs(lat or 0), abs(lon or 0))
+
+        event = EarthquakeReport(
+            source_id=self.source_id,
+            event_id=event_id,
+            occurred_at=occurred_at,
+            latitude=lat,
+            longitude=lon,
+            depth=depth,
+            magnitude=magnitude,
+            place_name=place_name,
+            mmi=mmi_val,
+            raw=item,
+        )
+        return EventEnvelope(
+            identity=EventIdentity(
+                event_id=event_id, source_id=self.source_id, event_type="earthquake",
+            ),
+            event=event,
+        )
+
+
+def _parse_max_mmi(dirasakan: str) -> float | None:
+    max_val = None
+    for part in dirasakan.replace(",", " ").split():
+        token = part.strip().rstrip(".-")
+        # Handle range: "III-IV" -> take max "IV"
+        if "-" in token and token.split("-")[0] in _MMI_ROMAN:
+            parts = token.split("-")
+            for p in parts:
+                p = p.strip().rstrip(".-")
+                if p in _MMI_ROMAN:
+                    v = _MMI_ROMAN[p]
+                    if max_val is None or v > max_val:
+                        max_val = v
+        # Handle "MMI" suffix: "V-MMI" -> "V"
+        elif token.endswith("MMI") and token[:-3] in _MMI_ROMAN:
+            v = _MMI_ROMAN[token[:-3]]
+            if max_val is None or v > max_val:
+                max_val = v
+        elif token in _MMI_ROMAN:
+            v = _MMI_ROMAN[token]
+            if max_val is None or v > max_val:
+                max_val = v
+    return float(max_val) if max_val is not None else None
+
+
+def group_dirasakan(dirasakan: str) -> list[tuple[str, list[str]]]:
+    groups: dict[str, list[str]] = {}
+    for part in dirasakan.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        # Handle "III-IV Kab. X" -> level "IV", place "Kab. X"
+        range_m = re.match(r"^([IVXLCDM]+)-([A-Z]+)\s+(.+)$", part)
+        if range_m and range_m.group(2) != "MMI" and range_m.group(2) in _MMI_ROMAN:
+            level = range_m.group(2)  # take max of range
+            place = range_m.group(3).strip()
+        else:
+            m = re.match(r"^([IVXLCDM]+)[-\s]+(.+)$", part)
+            if not m:
+                groups.setdefault("", []).append(part)
+                continue
+            level = m.group(1)
+            place = m.group(2).strip()
+        if not place or place.upper() == "MMI":
+            continue
+        place = re.sub(r"\s*\(.*?\)\s*", "", place).strip()
+        if level not in groups:
+            groups[level] = []
+        groups[level].append(place)
+
+    def _sort_key(item: tuple[str, list[str]]) -> int:
+        lv = item[0]
+        if lv in _MMI_ROMAN:
+            return -_MMI_ROMAN[lv]
+        return 0
+
+    return [(lv, places) for lv, places in sorted(groups.items(), key=_sort_key)]

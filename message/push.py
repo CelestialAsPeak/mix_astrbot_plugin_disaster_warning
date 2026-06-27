@@ -498,6 +498,20 @@ class PushExecutionService:
                         if map_b64_list:
                             for b64 in map_b64_list:
                                 chain_components.append(Image.fromBase64(b64))
+                    elif ev.source_id == "bmkg_http":
+                        # BMKG: 震度图用估算，烈度图用实际 MMI（数据源提供的 Dirasakan）
+                        if ev.magnitude is not None:
+                            s, _ = self.intensity_img_renderer.render_both(ev.magnitude, ev.depth)
+                            if s:
+                                _img(s)
+                        if ev.mmi is not None:
+                            _img(self.intensity_img_renderer.render_intensity_actual(str(ev.mmi), "最大烈度"))
+                        else:
+                            _img(self.intensity_img_renderer.render_intensity_actual("不明", "最大烈度"))
+                        map_b64_list = await self._render_event_map(envelope)
+                        if map_b64_list:
+                            for b64 in map_b64_list:
+                                chain_components.append(Image.fromBase64(b64))
                     else:
                         # 非 JMA 源：震度+烈度图 + 方位图（原逻辑）
                         if ev.magnitude is not None:

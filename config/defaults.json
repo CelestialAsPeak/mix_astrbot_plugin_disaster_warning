@@ -4,6 +4,7 @@
   "target_sessions": [],
   "offline_notification_sessions": [],
   "display_timezone": "UTC+8",
+  "icl_api_url": "",
   "data_sources": {
     "fan_studio": {
       "enabled": true,
@@ -59,7 +60,8 @@
       "tmd": false,
       "csnc": false,
       "phivolcs": false,
-      "snet": false
+      "snet": false,
+      "bmkg": false
     },
     "typhoon": {
       "enabled": false,
@@ -232,6 +234,11 @@
       "enabled": true,
       "min_magnitude": 3.0,
       "最小烈度": 4.0
+    },
+    "bmkg_filter": {
+      "enabled": true,
+      "min_magnitude": 4.0,
+      "最小烈度": 3
     }
   },
   "push_frequency_control": {

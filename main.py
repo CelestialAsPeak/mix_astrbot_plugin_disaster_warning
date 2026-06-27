@@ -79,6 +79,7 @@ from .parser.p2p import eew as p2p_eew, report as p2p_report, tsunami as p2p_tsu
 from .parser.p2p import http_eew as p2p_http_eew, http_report as p2p_http_report, http_tsunami as p2p_http_tsunami
 from .parser import global_quake as gq_parser, snet as snet_parser
 from .parser.http_poll import parsers as http_poll_parsers
+from .parser.http_poll import icl_parser  # noqa: F401 — ICL 注册
 from .parser.typhoon import cma as typhoon_cma, jma as typhoon_jma
 
 
@@ -96,6 +97,7 @@ _SHORT_SRC_MAP: dict[str, str] = {
     "geonet": "geonet_http", "nrcan": "nrcan_http",
     "csnc": "csnc_http", "phivolcs": "phivolcs_http",
     "tmd": "tmd_http", "funvisis": "funvisis_http",
+    "bmkg": "bmkg_http",
     "cenais": "cenais_http", "icl": "icl_http",
     "snet": "snet",
 }
@@ -149,6 +151,7 @@ _SOURCE_DISPLAY: dict[str, str] = {
     "csnc_http": "CSNC", "phivolcs_http": "PHIVOLCS", "snet_http": "S-net",
     "tmd_http": "TMD", "geonet_http": "GeoNet",
     "nrcan_http": "NRCan", "usgs_weekly": "USGS周报",
+    "bmkg_http": "BMKG",
     "snet": "S-net", "icl_http": "ICL",
     "beijing_fanstudio": "北京", "guangxi_fanstudio": "广西",
     "ningxia_fanstudio": "宁夏", "shanxi_fanstudio": "山西",
@@ -1035,7 +1038,7 @@ class MixDisasterWarningPlugin(Star):
             logger.info(f"[HTTP] {source_id} 解析结果为空列表")
             return
 
-        # 该源所有见过的事件 ID（set）
+        # 该源所有见过的唯一键（event_id|report_num，EEW 报次更新不拦截）
         seen_key = f"{source_id}:seen"
         seen: set = self._http_last_event.get(seen_key)
         is_first = seen is None
@@ -1045,9 +1048,9 @@ class MixDisasterWarningPlugin(Star):
 
         new_envs = []
         for env in envelopes:
-            eid = env.identity.event_id
-            if eid not in seen:
-                seen.add(eid)
+            uid = env.identity.unique_key
+            if uid not in seen:
+                seen.add(uid)
                 new_envs.append(env)
 
         if not new_envs:
@@ -1092,9 +1095,7 @@ class MixDisasterWarningPlugin(Star):
                     logger.warning(f"[HTTP] nrcan_http event_id 疑似 md5 回退: {eid}")
                     break
     def _setup_http_pollers(self, sources: dict, router: MessageRouter):
-        # ⚠️ ICL（成都高新减灾研究所）属于未公开/非官方数据源，
-        #    接入存在法律风险，故意不添加。如果你知道自己在做什么，
-        #    可以自己在这里加上 icl_http 的 poller。
+        # (name, url, interval, raw_text, ssl)
         POLLERS = {
             "funvisis_http": ("http://www.funvisis.gob.ve/maravilla.json", 10, True),
             "cenais_http": ("https://www.cenais.gob.cu/lastquake/php/lastweek.php", 10, True),
@@ -1111,6 +1112,8 @@ class MixDisasterWarningPlugin(Star):
             "jma_p2p_http": ("https://api.p2pquake.net/v2/history?codes=556&limit=1", 1, False),
             "jma_p2p_info_http": ("https://api.p2pquake.net/v2/jma/quake?limit=5", 1, False),
             "jma_tsunami_p2p_http": ("https://api.p2pquake.net/v2/history?codes=552&limit=1", 60, False),
+            # BMKG 印尼气象局地震报告
+            "bmkg_http": ("https://data.bmkg.go.id/DataMKG/TEWS/gempadirasakan.json", 5, False),
         }
         for sid, (url, interval, raw_text) in POLLERS.items():
             if sid in sources:
@@ -1119,6 +1122,15 @@ class MixDisasterWarningPlugin(Star):
                     handler=self._handle_http_poll_result,
                     raw_text=raw_text,
                 )
+        # ICL（成都高新减灾研究所）— URL 仅在生产配置中设置，不在 Git 中
+        icl_url = self.config.get("icl_api_url", "") if hasattr(self, "config") else ""
+        if icl_url and "icl_http" in sources:
+            self.http_poll_manager.add_poller(
+                name="icl_http", url=icl_url, interval=30,
+                handler=self._handle_http_poll_result,
+                raw_text=True, ssl=False,
+            )
+            logger.info("[ICL] 已从配置加载 ICL 轮询器")
 
     # ═══════════════════ 数据查询 ═══════════════════
 
@@ -1771,6 +1783,7 @@ class MixDisasterWarningPlugin(Star):
                 "tmd_http", "phivolcs_http", "csnc_http", "usgs_weekly",
                 "jma_wolfx_http", "jma_wolfx_info_http",
                 "jma_p2p_http", "jma_p2p_info_http", "jma_tsunami_p2p_http",
+		"bmkg_http",
             }
             if source_id in _HTTP_SOURCES and self.http_poll_manager:
                 logger.info(f"[查询] {source_id} DB 无数据，触发即时抓取")
@@ -1837,6 +1850,19 @@ class MixDisasterWarningPlugin(Star):
             )
             text = present_eew(eew)
         else:
+            mmi_val = None
+            if source_id == "bmkg_http":
+                level_raw = r.get("level") or ""
+                if level_raw:
+                    try:
+                        mmi_val = float(level_raw)
+                    except (ValueError, TypeError):
+                        pass
+                if mmi_val is None:
+                    from .parser.http_poll.parsers import _parse_max_mmi
+                    dirasakan = str(raw.get("Dirasakan", "") or "")
+                    if dirasakan:
+                        mmi_val = _parse_max_mmi(dirasakan)
             rep = EarthquakeReport(
                 source_id=source_id,
                 event_id=r.get("real_event_id", "") or source_id,
@@ -1848,6 +1874,7 @@ class MixDisasterWarningPlugin(Star):
                 place_name=r.get("place_name") or r.get("description"),
                 region=r.get("subtitle") or "",
                 report_num=r.get("report_num"),
+                mmi=mmi_val if source_id == "bmkg_http" else None,
                 raw=raw,
             )
             text = present_earthquake_report(rep)
@@ -1864,9 +1891,15 @@ class MixDisasterWarningPlugin(Star):
                 depth = r.get("depth")
                 if mag is not None:
                     try:
-                        s_path, i_path = self._intensity_img_renderer.render_both(
-                            mag, depth or 10.0,
-                        )
+                        if source_id == "bmkg_http" and mmi_val is not None:
+                            s_path, _ = self._intensity_img_renderer.render_both(
+                                mag, depth or 10.0,
+                            )
+                            i_path = self._intensity_img_renderer.render_intensity_actual(str(mmi_val), "最大烈度")
+                        else:
+                            s_path, i_path = self._intensity_img_renderer.render_both(
+                                mag, depth or 10.0,
+                            )
                         for p in (s_path, i_path):
                             if p and os.path.exists(p):
                                 with open(p, "rb") as f:
@@ -2218,6 +2251,10 @@ class MixDisasterWarningPlugin(Star):
     async def q_wnrl(self, e):
         async for r in self._quick_query(e, "funvisis_http", "FUNVISIS"): yield r
 
+    @filter.regex(r"^/bmkg(?:\s|$)")
+    async def q_bmkg(self, e):
+        async for r in self._quick_query(e, "bmkg_http", "BMKG"): yield r
+
     @filter.regex(r"^/556(?:\s|$)")
     async def q_556(self, event: AstrMessageEvent):
         """抓取 JMA 紧急地震速报（556）并推送。"""
@@ -2370,6 +2407,7 @@ class MixDisasterWarningPlugin(Star):
             "geonet_http": "GeoNet", "nrcan_http": "NRCan",
             "tmd_http": "TMD", "phivolcs_http": "PHIVOLCS",
             "csnc_http": "CSNC", "usgs_weekly": "USGS周报",
+	    "bmkg_http": "BMKG",
             "jma_wolfx_http": "JMA(Wolfx HTTP)", "jma_wolfx_info_http": "JMA情报(Wolfx HTTP)",
             "jma_p2p_http": "JMA(P2P HTTP)", "jma_p2p_info_http": "JMA情报(P2P HTTP)",
             "jma_tsunami_p2p_http": "JMA海啸(P2P HTTP)",

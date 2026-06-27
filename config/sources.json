@@ -821,8 +821,14 @@
     "institution_display_name": "JMA EEW (Wolfx HTTP)",
     "query_group": "eew",
     "dispatch_family": "wolfx_eew",
-    "routing_tags": ["wolfx", "jma", "eew"],
-    "metadata": {"poll_interval": "30"}
+    "routing_tags": [
+      "wolfx",
+      "jma",
+      "eew"
+    ],
+    "metadata": {
+      "poll_interval": "30"
+    }
   },
   "jma_wolfx_info_http": {
     "source_id": "jma_wolfx_info_http",
@@ -841,8 +847,14 @@
     "institution_display_name": "JMA 地震情报 (Wolfx HTTP)",
     "query_group": "earthquake",
     "dispatch_family": "wolfx_report",
-    "routing_tags": ["wolfx", "jma", "report"],
-    "metadata": {"poll_interval": "60"}
+    "routing_tags": [
+      "wolfx",
+      "jma",
+      "report"
+    ],
+    "metadata": {
+      "poll_interval": "60"
+    }
   },
   "sc_wolfx_eew": {
     "source_id": "sc_wolfx_eew",
@@ -1017,8 +1029,14 @@
     "institution_display_name": "JMA EEW (P2P HTTP)",
     "query_group": "eew",
     "dispatch_family": "p2p_eew",
-    "routing_tags": ["p2p", "jma", "eew"],
-    "metadata": {"poll_interval": "30"}
+    "routing_tags": [
+      "p2p",
+      "jma",
+      "eew"
+    ],
+    "metadata": {
+      "poll_interval": "30"
+    }
   },
   "jma_p2p_info_http": {
     "source_id": "jma_p2p_info_http",
@@ -1037,8 +1055,14 @@
     "institution_display_name": "JMA 地震情报 (P2P HTTP)",
     "query_group": "earthquake",
     "dispatch_family": "p2p_report",
-    "routing_tags": ["p2p", "jma", "report"],
-    "metadata": {"poll_interval": "60"}
+    "routing_tags": [
+      "p2p",
+      "jma",
+      "report"
+    ],
+    "metadata": {
+      "poll_interval": "60"
+    }
   },
   "jma_tsunami_p2p_http": {
     "source_id": "jma_tsunami_p2p_http",
@@ -1057,8 +1081,14 @@
     "institution_display_name": "JMA 海啸 (P2P HTTP)",
     "query_group": "tsunami",
     "dispatch_family": "p2p_tsunami",
-    "routing_tags": ["p2p", "jma", "tsunami"],
-    "metadata": {"poll_interval": "60"}
+    "routing_tags": [
+      "p2p",
+      "jma",
+      "tsunami"
+    ],
+    "metadata": {
+      "poll_interval": "60"
+    }
   },
   "global_quake": {
     "source_id": "global_quake",
@@ -1249,5 +1279,41 @@
     "institution_key": "typhoon",
     "institution_display_name": "日本气象厅台风",
     "query_group": "typhoon"
+  },
+  "bmkg_http": {
+    "source_id": "bmkg_http",
+    "source_type": "earthquake_info",
+    "provider_family": "direct_http",
+    "parser_name": "bmkg_http",
+    "presentation_type": "earthquake_report",
+    "config_group": "direct_http",
+    "config_key": "bmkg",
+    "priority": 0,
+    "display_name": "印度尼西亚气象、气候和地球物理局",
+    "default_timezone": "Asia/Jakarta",
+    "institution_key": "bmkg",
+    "code_override": "BMKG",
+    "institution_display_name": "BMKG",
+    "query_group": "earthquake"
+  },
+  "icl_http": {
+    "source_id": "icl_http",
+    "source_type": "earthquake_warning",
+    "provider_family": "direct_http",
+    "parser_name": "icl_http",
+    "presentation_type": "earthquake_eew",
+    "config_group": "direct_http",
+    "config_key": "icl",
+    "priority": 20,
+    "display_name": "成都高新减灾研究所(ICL)",
+    "description": "未公开数据源，请勿外传",
+    "default_timezone": "Asia/Shanghai",
+    "institution_key": "icl",
+    "code_override": "ICL",
+    "institution_display_name": "ICL",
+    "query_group": "eew",
+    "metadata": {
+      "legal_warning": "此数据源不得上传至任何公开仓库"
+    }
   }
 }

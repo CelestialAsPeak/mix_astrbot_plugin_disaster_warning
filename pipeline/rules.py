@@ -191,6 +191,7 @@ class EarthquakeThresholdRule(BaseRule):
         "funvisis_http": "funvisis_filter", "cenais_http": "cenais_filter",
         "csnc_http": "csnc_filter", "tmd_http": "tmd_filter",
         "phivolcs_http": "phivolcs_filter",
+        "bmkg_http": "bmkg_filter",
         # snet_http 故意不加入 _FILTER_MAP：
         # SNET 是海底震度监测（非地震测定），其 min_magnitude 实际是测站级 shindo 阈值
         # 已经在 _fetch_snet_once() 中用于测站过滤，这里不再重复当震级阈值用

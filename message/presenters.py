@@ -147,6 +147,7 @@ _EVENT_LABELS: dict[str, str] = {
     "fj_wolfx_eew": "地震预警",
     "cq_wolfx_eew": "地震预警",
     "global_quake": "地震预警",
+    "icl_http": "地震预警",
     # 地震报告源 — JMA 用 raw issue.type 动态标题，此处仅作兜底
     "jma_p2p_info": "地震情報",
     "jma_p2p_info_http": "地震情報",
@@ -469,6 +470,24 @@ def present_earthquake_report(event: EarthquakeReport) -> str:
         cwa_intensity = str(raw_cwa.get("maxIntensity", "") or "")
         if cwa_intensity:
             lines.append(_field("最大震度", cwa_intensity))
+    # -- BMKG report: max intensity + felt areas --
+    if event.source_id == "bmkg_http":
+        raw_bmkg = event.raw if isinstance(event.raw, dict) else {}
+        dirasakan = str(raw_bmkg.get("Dirasakan", "") or "")
+        if dirasakan:
+            if event.mmi is not None:
+                roman = _to_roman_numeral(int(round(event.mmi)))
+                lines.append(_field("最大烈度", f"{roman} (MMI)"))
+            try:
+                from ..parser.http_poll.parsers import group_dirasakan
+                grouped = group_dirasakan(dirasakan)
+                if grouped:
+                    lines.append(_field("有感地区", ""))
+                    for level, places in grouped:
+                        lines.append(f"  {level}: {', '.join(places)}")
+            except ImportError:
+                pass
+
 
     # ── JMA 震度观测点：按震度分组、按地区合并（对齐 CAPQuake Qt） ──
     if is_jma_p2p and event.intensity_points:
@@ -673,6 +692,15 @@ def _shindo_label_str(shindo: float) -> str:
     if shindo >= 0.5: return "震度1"
     if shindo >= 0.0: return "震度0"
     return "震度0以下"
+
+
+_ROMAN_NUMERALS = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"]
+
+
+def _to_roman_numeral(n: int) -> str:
+    if 1 <= n <= 12:
+        return _ROMAN_NUMERALS[n - 1]
+    return str(n)
 
 
 # ── 台风自动推送格式（‖ 前缀风格） ──

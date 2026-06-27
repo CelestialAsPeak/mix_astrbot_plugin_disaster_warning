@@ -28,6 +28,7 @@ class HttpPoller:
         handler: Callable | None = None,
         raw_text: bool = False,
         headers: dict | None = None,
+        ssl: bool | None = None,
     ):
         self.name = name
         self.url = url
@@ -35,6 +36,7 @@ class HttpPoller:
         self._handler = handler
         self._raw_text = raw_text
         self._headers = headers or {}
+        self._ssl = ssl  # None=默认验证, False=禁用验证
         self._task: asyncio.Task | None = None
         self._running = False
         self._session = None
@@ -76,7 +78,12 @@ class HttpPoller:
         import aiohttp
 
         if self._session is None or self._session.closed:
-            self._session = aiohttp.ClientSession(headers=self._headers)
+            # SSL 验证：None=默认, False=禁用
+            if self._ssl is False:
+                connector = aiohttp.TCPConnector(ssl=False)
+                self._session = aiohttp.ClientSession(headers=self._headers, connector=connector)
+            else:
+                self._session = aiohttp.ClientSession(headers=self._headers)
 
         try:
             async with self._session.get(self.url, timeout=60) as resp:
@@ -112,6 +119,7 @@ class HttpPollManager:
         handler: Callable | None = None,
         raw_text: bool = False,
         headers: dict | None = None,
+        ssl: bool | None = None,
     ) -> HttpPoller:
         poller = HttpPoller(
             name=name,
@@ -120,6 +128,7 @@ class HttpPollManager:
             handler=handler,
             raw_text=raw_text,
             headers=headers,
+            ssl=ssl,
         )
         self._pollers[name] = poller
         return poller
