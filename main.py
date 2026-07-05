@@ -1311,20 +1311,38 @@ class MixDisasterWarningPlugin(Star):
     # ═══════════════════ CENC / CEA-PR 省网轮询（替代 FAN） ═══════════════════
 
     async def _start_cenc_polling(self):
-        """启动 CENC 全国 EEW + CEA-PR 各省独立轮询。"""
-        self._cenc_eew_seen = set()
-        logger.info("[CENC] 启动 EEW 轮询: 全国源 2s")
-        if not hasattr(self, '_cenc_task') or not self._cenc_task:
-            self._cenc_task = asyncio.create_task(self._poll_cenc_national())
-        # CEA-PR 各省独立轮询（每省一条时间线）
-        logger.info(f"[CEA-PR] 启动各省轮询: {len(_CENC_PROVINCES)} 省")
-        self._ceapr_tasks: dict[str, asyncio.Task] = {}
-        for name, app_id in _CENC_PROVINCES:
-            task = asyncio.create_task(self._poll_ceapr_province(name, app_id))
-            self._ceapr_tasks[app_id] = task
-        # CEA-PR 融合去重状态
-        self._ceapr_fusion: dict[str, dict] = {}  # fingerprint → {province, ts}
-        self._ceapr_latest: dict[str, str] = {}    # app_id → fingerprint
+        """启动 CENC 全国 EEW + CEA-PR 各省独立轮询（受 data_sources 控制）。"""
+        try:
+            _cfg = dict(self.config)
+            _ds = _cfg.get("data_sources", {})
+            _dh = _ds.get("direct_http", {}) if isinstance(_ds, dict) else {}
+        except Exception:
+            _dh = {}
+
+        # 全国源开关
+        _cenc_enabled = _dh.get("cenc_eew", True)
+        if isinstance(_cenc_enabled, bool) and not _cenc_enabled:
+            logger.info("[CENC] 全国 EEW 轮询已禁用（data_sources.direct_http.cenc_eew=false）")
+        else:
+            self._cenc_eew_seen = set()
+            logger.info("[CENC] 启动 EEW 轮询: 全国源 2s")
+            if not hasattr(self, '_cenc_task') or not self._cenc_task:
+                self._cenc_task = asyncio.create_task(self._poll_cenc_national())
+
+        # 省级源开关
+        _ceapr_enabled = _dh.get("cenc_eew_province", True)
+        if isinstance(_ceapr_enabled, bool) and not _ceapr_enabled:
+            logger.info("[CEA-PR] 各省 EEW 轮询已禁用（data_sources.direct_http.cenc_eew_province=false）")
+        else:
+            logger.info(f"[CEA-PR] 启动各省轮询: {len(_CENC_PROVINCES)} 省")
+            self._ceapr_tasks: dict[str, asyncio.Task] = {}
+            for name, app_id in _CENC_PROVINCES:
+                task = asyncio.create_task(self._poll_ceapr_province(name, app_id))
+                self._ceapr_tasks[app_id] = task
+
+        # CEA-PR 融合去重状态（不管开关都初始化，防查询命令报错）
+        self._ceapr_fusion: dict[str, dict] = {}
+        self._ceapr_latest: dict[str, str] = {}
 
     async def _poll_cenc_national(self):
         """全国汇总源 EEW 轮询 — 2 秒间隔。"""

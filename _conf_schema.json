@@ -20,9 +20,29 @@
   "groups": {
     "description": "📢 多群组推送配置",
     "type": "object",
-    "hint": "每个群组独立设置推送会话和阈值过滤。\n键=群组ID，值={sessions:[会话ID], earthquake_filters:{数据源:{阈值}}}\n也可用命令 /灾害预警群组 管理",
+    "hint": "每个群组独立设置推送会话和阈值过滤。\n键=群组ID，值={sessions:[会话ID], description:描述, earthquake_filters:{数据源:{阈值}}}\n会话ID：QQ群号/私聊用户ID/频道ID等。\n也可用命令 /灾害预警群组 管理",
     "default": {},
-    "items": {}
+    "items": {
+      "sessions": {
+        "description": "推送目标会话列表",
+        "type": "list",
+        "hint": "每个元素是一个会话ID（QQ群号等）",
+        "default": []
+      },
+      "description": {
+        "description": "群组备注描述",
+        "type": "string",
+        "hint": "可选的群组备注，方便识别不同群组",
+        "default": ""
+      },
+      "earthquake_filters": {
+        "description": "群组级地震过滤配置（覆盖全局 earthquake_filters）",
+        "type": "object",
+        "hint": "键=数据源ID，值={min_magnitude, 最小烈度}\n例如：{\"cenc_eew_http\": {\"min_magnitude\": 3.0, \"最小烈度\": 4.0}}\n为空时使用全局 earthquake_filters",
+        "default": {},
+        "items": {}
+      }
+    }
   },
   "offline_notification_sessions": {
     "description": "离线通知接收会话列表",
@@ -309,7 +329,12 @@
             "default": false
           },
           "cenc_eew": {
-            "description": "CENC 省网 EEW 报警（替代 FAN CEA）",
+            "description": "CENC 全国 EEW（CEA 全国源）",
+            "type": "bool",
+            "default": false
+          },
+          "cenc_eew_province": {
+            "description": "CENC 省级 EEW（CEA-PR 32省融合源）",
             "type": "bool",
             "default": false
           },
@@ -1380,6 +1405,72 @@
             "description": "最小烈度（中国标准烈度，0-12级）",
             "type": "float",
             "default": 5.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
+          }
+        }
+      },
+      "cenc_eew_filter": {
+        "description": "CEA 全国 EEW 专用过滤器（cenc_eew_http）",
+        "type": "object",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 3.0,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 4.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
+          }
+        }
+      },
+      "cenc_eew_province_filter": {
+        "description": "CEA-PR 省级 EEW 专用过滤器（cenc_eew_province）",
+        "type": "object",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 3.0,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 4.0,
             "slider": {
               "min": 0,
               "max": 12,
@@ -2666,6 +2757,72 @@
               "max": 7.0,
               "step": 0.1
             }
+          }
+        }
+      },
+      "cenc_eew_filter": {
+        "description": "🌙 睡眠CEA 全国 EEW 专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 3.5,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 5.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
+          }
+        }
+      },
+      "cenc_eew_province_filter": {
+        "description": "🌙 睡眠CEA-PR 省级 EEW 专用过滤器",
+        "type": "object",
+        "items": {
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "min_magnitude": {
+            "description": "最小震级",
+            "type": "float",
+            "default": 3.5,
+            "slider": {
+              "min": 0,
+              "max": 10,
+              "step": 0.1
+            },
+            "hint": "震级大于等于此值时推送"
+          },
+          "最小烈度": {
+            "description": "最小烈度（中国标准烈度，0-12级）",
+            "type": "float",
+            "default": 5.0,
+            "slider": {
+              "min": 0,
+              "max": 12,
+              "step": 0.1
+            },
+            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
           }
         }
       },

@@ -82,7 +82,12 @@ class EventTimeRule(BaseRule):
 # ─── 2. 数据源启用规则 ───
 
 class SourceEnabledRule(BaseRule):
-    """检查数据源是否在配置中启用。"""
+    """检查数据源是否在配置中启用。
+
+    支持两种模式：
+    1. 组级禁用：data_sources.{组}.enabled = false
+    2. 单个源禁用：data_sources.{组}.{config_key} = false（如 direct_http.cenc_eew）
+    """
 
     name = "source_enabled"
 
@@ -95,17 +100,27 @@ class SourceEnabledRule(BaseRule):
         for group_name, group_cfg in data_sources.items():
             if not isinstance(group_cfg, dict):
                 continue
+
+            # 模式1：组级 enabled=false → 检查 sources 名单或源 ID 精确匹配
             if group_cfg.get("enabled", True) is False:
-                # 检查 source_id 是否属于这个被禁用的组
-                # 如果组内的源包含当前 source_id（模糊匹配），则拦截
                 sources_in_group = group_cfg.get("sources", [])
                 if isinstance(sources_in_group, list) and source_id in sources_in_group:
                     return RuleDecision.reject(
                         f"数据源 {source_id} 已被组 {group_name} 禁用", self.name)
-                # 特殊情况：组配置的 key 等于 source_id 直接匹配
                 if source_id == group_name:
                     return RuleDecision.reject(
                         f"数据源 {source_id} 已禁用", self.name)
+
+            # 模式2：组下 individual source toggle（如 direct_http.cenc_eew: false）
+            for s_key, s_val in group_cfg.items():
+                if s_key in ("enabled", "sources", "_comment"):
+                    continue
+                if isinstance(s_val, bool) and s_val is False:
+                    # 匹配方式：config_key 与 source_id 有包含关系
+                    if s_key in source_id or source_id in s_key:
+                        return RuleDecision.reject(
+                            f"数据源 {source_id} 已禁用（{group_name}.{s_key}=false）",
+                            self.name)
 
         return RuleDecision.accept(rule_name=self.name)
 
