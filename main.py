@@ -1503,12 +1503,12 @@ class MixDisasterWarningPlugin(Star):
                 await asyncio.sleep(__import__("random").uniform(3, 6))
 
     async def _handle_ceapr(self, raw_data: dict, name: str, app_id: str):
-        """处理 CEA-PR 单个省 EEW：融合去重 → 首见推送。
+        """处理 CEA-PR 单个省 EEW。
 
-        融合策略：
-        - 每省只跟踪最新事件的 fingerprint（mag+place+depth+lat+lon+time）
-        - fingerprint 对比 → 同一地震的后续省数据直接丢弃（不入库不推）
-        - 完全一致的 fingerprint 跨省也不推（同地震在另一省的 API 重复返回）
+        数据流：解析 → 存库（永远存）→ 三道门决定是否推送
+          门1: 首次启动静默（防重启洪水）
+          门2: 事件超过1小时（防历史事件）
+          门3: 跨省融合重复（同地震只推第一个省的）
         """
         if not isinstance(raw_data, dict) or raw_data.get("code") != 0:
             return
@@ -1519,55 +1519,7 @@ class MixDisasterWarningPlugin(Star):
         if not isinstance(item, dict):
             return
 
-        # 提取基本字段
-        event_id = item.get("id", "")
-        magnitude = item.get("level")
-        place = item.get("location", "")
-        depth = item.get("depth")
-        lat = item.get("latitude")
-        lon = item.get("longitude")
-        ts = item.get("created_at", 0)
-
-        # fingerprint: 同地震各字段完全一致（含报次，每报独立）
-        # 注意：depth/lat/lon 可能是 None，不能直接 float()，用 "?" 占位
-        report_num = item.get("serial_number", 0) or 0
-        try:
-            mag_s = f"{float(magnitude):.1f}" if magnitude is not None else "?"
-            lat_s = f"{float(lat):.3f}" if lat is not None else "?"
-            lon_s = f"{float(lon):.3f}" if lon is not None else "?"
-            dep_s = str(depth) if depth is not None else "?"
-            fingerprint = f"{mag_s}|{place}|{dep_s}|{lat_s}|{lon_s}|{ts}|{report_num}"
-        except (TypeError, ValueError):
-            return
-
-        # 1) 检查是否该省已有这条最新事件（fingerprint 相同 = 无变化）
-        prev_fp = self._ceapr_latest.get(app_id)
-        if prev_fp == fingerprint:
-            return
-        self._ceapr_latest[app_id] = fingerprint
-
-        # 2) 跨省融合去重：首次见的 fingerprint → 推送，后续见的舍
-        if fingerprint in self._ceapr_fusion:
-            entry = self._ceapr_fusion[fingerprint]
-            if not entry.get("_logged"):
-                entry["_logged"] = True
-                logger.info(f"[CEA-PR] 融合跳过: M{magnitude} {place}（首发 {entry['province']}，后续省已去重）")
-            return
-        self._ceapr_fusion[fingerprint] = {"province": _CENC_SHORT_NAME.get(app_id, name), "ts": __import__("time").time(), "_logged": False}
-
-        # 3) TTL 清理（24h + 500 条上限）
-        now = __import__("time").time()
-        if len(self._ceapr_fusion) > 500:
-            expired = [k for k, v in self._ceapr_fusion.items() if now - v["ts"] > 86400]
-            for k in expired:
-                del self._ceapr_fusion[k]
-            # 如果清理完还是太多，清掉最旧的一半
-            if len(self._ceapr_fusion) > 500:
-                sorted_items = sorted(self._ceapr_fusion.items(), key=lambda x: x[1]["ts"])
-                for k, _ in sorted_items[:250]:
-                    del self._ceapr_fusion[k]
-
-        # 4) 用 CencEewProvinceParser 解析 → pipeline 推送
+        # 1) 解析（用 parser 获取标准化的 EventEnvelope）
         try:
             from .parser.registry import ParserRegistry
         except ImportError:
@@ -1581,30 +1533,96 @@ class MixDisasterWarningPlugin(Star):
         envelopes = result if isinstance(result, list) else [result]
         if not envelopes:
             return
-
-        # 在 event.raw 中注入省份名，供 presenters 拼标题用
-        province_short = _CENC_SHORT_NAME.get(app_id, name.replace("地震预警网", ""))
-        for env in envelopes:
-            if hasattr(env.event, "raw") and isinstance(env.event.raw, dict):
-                env.event.raw["_province_name"] = province_short
-
         env = envelopes[0]
         ev = env.event
-        mag_v = getattr(ev, "magnitude", None)
-        place_v = getattr(ev, "place_name", None) or place
-        occurred = getattr(ev, "occurred_at", None)
-        time_s = occurred.strftime("%H:%M:%S") if occurred else "?"
-        mag_s = f" M{mag_v:.1f}" if mag_v is not None else ""
-        logger.info(f"[CEA-PR] 新事件: {name} {time_s}{mag_s} {place_v}")
 
-        # 先入库（无论 pipeline 是否推，DB 必须有数据供查询）
+        # 2) 提取字段 + 构建指纹（仅用于去重和判断）
+        magnitude = getattr(ev, "magnitude", None) or item.get("level")
+        place = getattr(ev, "place_name", None) or item.get("location", "")
+        depth = getattr(ev, "depth", None) or item.get("depth")
+        lat = getattr(ev, "latitude", None) or item.get("latitude")
+        lon = getattr(ev, "longitude", None) or item.get("longitude")
+        ts = item.get("created_at", 0)
+        report_num = item.get("serial_number", 0) or 0
+
+        try:
+            mag_s = f"{float(magnitude):.1f}" if magnitude is not None else "?"
+            lat_s = f"{float(lat):.3f}" if lat is not None else "?"
+            lon_s = f"{float(lon):.3f}" if lon is not None else "?"
+            dep_s = str(depth) if depth is not None else "?"
+            fingerprint = f"{mag_s}|{place}|{dep_s}|{lat_s}|{lon_s}|{ts}|{report_num}"
+        except (TypeError, ValueError):
+            return
+
+        # 3) 每省最新指纹对比 → 没变化直接跳过（省API没新数据）
+        prev_fp = self._ceapr_latest.get(app_id)
+        if prev_fp == fingerprint:
+            return
+        self._ceapr_latest[app_id] = fingerprint
+
+        # 4) 注入省份名（供展示用）
+        province_short = _CENC_SHORT_NAME.get(app_id, name.replace("地震预警网", ""))
+        if hasattr(ev, "raw") and isinstance(ev.raw, dict):
+            ev.raw["_province_name"] = province_short
+
+        # 5) 永远存库（不管推不推，查询命令都要能查到）
+        stored = False
         if self.database:
             try:
                 await self.database.insert_envelope(env)
+                stored = True
             except Exception as e:
                 logger.warning(f"[CEA-PR] {name} 入库失败: {e}")
 
-        # 再推送（pipeline 阈值可能拒绝，但不影响已入库的数据）
+        # 6) 日志（打印省名/震级/时间）
+        occurred = getattr(ev, "occurred_at", None)
+        time_s = occurred.strftime("%H:%M:%S") if occurred else "?"
+        mag_s_log = f" M{magnitude:.1f}" if magnitude is not None else ""
+        logger.info(f"[CEA-PR] {name}: {time_s}{mag_s_log} {place}（{'已入库' if stored else '入库失败'}）")
+
+        # ── 三道推送门 ──
+
+        # 门1: 首次启动静默（防重启后历史洪水）
+        if not hasattr(self, '_ceapr_first_done'):
+            self._ceapr_first_done = True
+            logger.info(f"[CEA-PR] 首轮静默: 跳过推送 {name} {place}")
+            return
+
+        # 门2: 事件超过1小时（防历史/测试数据）
+        # created_at 是毫秒级时间戳（13位）或秒级（10位），统一转秒
+        _now_ts = __import__("time").time()
+        _ts_raw = item.get("created_at", 0) or 0
+        if isinstance(_ts_raw, (int, float)) and _ts_raw > 1000000000:
+            _event_ts = _ts_raw / 1000 if _ts_raw > 10000000000 else _ts_raw
+            age_seconds = _now_ts - _event_ts
+            if age_seconds > 3600:
+                logger.info(f"[CEA-PR] 超时不推: {name} {place}（{age_seconds:.0f}s > 3600s）")
+                return
+
+        # 门3: 跨省融合去重 — 同地震后续省只入库不推送
+        if fingerprint in self._ceapr_fusion:
+            entry = self._ceapr_fusion[fingerprint]
+            if not entry.get("_logged"):
+                entry["_logged"] = True
+                logger.info(f"[CEA-PR] 融合不推: M{magnitude} {place}（首发 {entry['province']}，后续省只入库）")
+            return
+        self._ceapr_fusion[fingerprint] = {
+            "province": province_short,
+            "ts": _now_ts,
+            "_logged": False,
+        }
+
+        # 融合缓存清理（24h + 500上限）
+        if len(self._ceapr_fusion) > 500:
+            expired = [k for k, v in self._ceapr_fusion.items() if _now_ts - v["ts"] > 86400]
+            for k in expired:
+                del self._ceapr_fusion[k]
+            if len(self._ceapr_fusion) > 500:
+                sorted_items = sorted(self._ceapr_fusion.items(), key=lambda x: x[1]["ts"])
+                for k, _ in sorted_items[:250]:
+                    del self._ceapr_fusion[k]
+
+        # ── 推送 ──
         if self.pipeline:
             try:
                 await self.pipeline.handle(env)
