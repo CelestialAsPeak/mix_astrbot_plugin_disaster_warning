@@ -147,8 +147,8 @@ _EVENT_LABELS: dict[str, str] = {
     "fj_wolfx_eew": "地震预警",
     "cq_wolfx_eew": "地震预警",
     "cwa_wolfx_http": "強震即時警報",
-    "kma_wolfx_http": "地震预警",
     "sc_wolfx_http": "地震预警",
+    # cenc_wolfx_info_http 标签由 type 字段动态决定（自动测定/正式测定）
     "fj_wolfx_http": "地震预警",
     "cq_wolfx_http": "地震预警",
     "global_quake": "地震预警",
@@ -211,7 +211,8 @@ _SOURCE_NAMES: dict[str, str] = {
     "jma_p2p_http": "JMA", "jma_p2p_info_http": "JMA",
     "jma_tsunami_p2p_http": "JMA",
     "sc_wolfx_eew": "SC", "fj_wolfx_eew": "FJ", "cq_wolfx_eew": "CQ",
-    "cwa_wolfx_http": "CWA", "kma_wolfx_http": "KMA",
+    "cwa_wolfx_http": "CWA",
+    "cenc_wolfx_info_http": "CENC",
     "sc_wolfx_http": "SC", "fj_wolfx_http": "FJ", "cq_wolfx_http": "CQ",
     "beijing_fanstudio": "BJ", "guangxi_fanstudio": "GX",
     "ningxia_fanstudio": "NX", "shanxi_fanstudio": "SX", "yunnan_fanstudio": "YN",
@@ -349,16 +350,23 @@ def present_eew(event: EewEvent) -> str:
         if report_parts:
             lines.append(_field("報次", "".join(report_parts)))
 
+    raw = event.raw if isinstance(event.raw, dict) else {}
+    is_assumption = raw.get("isAssumption", False) or raw.get("is_assumption", False)
+
     if event.place_name:
         lines.append(_field("震中", event.place_name))
+
     if event.magnitude is not None:
         lines.append(_field("震级", f"M{event.magnitude:.1f}"))
     if event.depth is not None:
-        lines.append(_field("深度", f"{event.depth:.0f} km"))
+        depth_str = "不明" if is_assumption else f"{event.depth:.0f} km"
+        lines.append(_field("深度", depth_str))
     if event.occurred_at:
         lines.append(_field("发震时间", _fmt_time_with_tz(event.occurred_at, event.source_id)))
     coords = _format_coords(event.latitude, event.longitude)
-    if coords:
+    if is_assumption:
+        lines.append(_field("经纬度", "（推定震源 PLUM法）"))
+    elif coords:
         lines.append(_field("经纬度", coords))
     if event.max_intensity:
         intensity_label = "最大震度" if (is_jma or is_cwa) else "最大烈度"
@@ -372,6 +380,48 @@ def present_eew(event: EewEvent) -> str:
         else:
             lines.append(_field("预估最大烈度", "不明"))
             lines.append(_field("预估最大震度", "不明"))
+    # ── Wolfx JMA EEW 强震区域 ──
+    if is_jma and not event.is_cancel:
+        raw = event.raw if isinstance(event.raw, dict) else {}
+        warn_areas = raw.get("WarnArea") or event.warn_areas
+        if isinstance(warn_areas, list) and warn_areas:
+            # 按震度分组合并：{震度: [地区名列表]}
+            shindo_groups: dict[str, list[str]] = {}
+            for area in warn_areas:
+                if not isinstance(area, dict):
+                    continue
+                chiiki = str(area.get("Chiiki", area.get("AreaName", "")) or "")
+                if not chiiki:
+                    continue
+                shindo = str(area.get("Shindo1", area.get("Shindo", "")) or "")
+                if not shindo:
+                    continue
+                arrive = area.get("Arrive", "")
+                time_str = str(area.get("Time", "") or "")
+                # 已到達 或 Time 为 ////// 标记
+                is_arrived = (
+                    (isinstance(arrive, bool) and arrive) or
+                    (isinstance(arrive, str) and arrive.lower() == "true") or
+                    time_str in ("//////", "/////")
+                )
+                suffix = "已到達" if is_arrived else ""
+                if suffix:
+                    entry = f"{chiiki}[{suffix}]"
+                elif time_str and len(time_str) >= 8:
+                    entry = f"{chiiki}[{time_str[-8:]}到達]"
+                else:
+                    entry = chiiki
+                shindo_groups.setdefault(shindo, []).append(entry)
+
+            if shindo_groups:
+                # 按震度数字排序（大→小）
+                sorted_shindos = sorted(shindo_groups.keys(), reverse=True)
+                area_lines = ["强震区域："]
+                for sk in sorted_shindos:
+                    names = "、".join(shindo_groups[sk])
+                    area_lines.append(f"震度{sk}：{names}")
+                lines.extend(area_lines)
+
     # GQ 特有数据
     raw = event.raw if isinstance(event.raw, dict) else {}
     su = raw.get("stations_used")
@@ -425,6 +475,10 @@ def present_earthquake_report(event: EarthquakeReport) -> str:
         elif event.source_id == "cenc_fanstudio":
             info_type = str(event.raw.get("infoTypeName", event.raw.get("info_type", "")) or "")
             base_label = info_type if info_type in ("自动测定", "正式测定") else "地震报告"
+        # Wolfx CENC eqlist: type = "automatic" | "reviewed"
+        elif event.source_id == "cenc_wolfx_info_http":
+            _t = str(event.raw.get("type", "") or "")
+            base_label = {"automatic": "自动测定", "reviewed": "正式测定"}.get(_t, "地震测定")
         else:
             base_label = "地震报告"
 

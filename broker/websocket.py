@@ -3,6 +3,8 @@ broker/websocket.py — WebSocket 连接管理器。
 
 支持多URL故障转移、线性退避重连、连接超时检测。
 管理 FAN Studio、Wolfx、P2P、GlobalQuake 等 WebSocket 数据源。
+
+支持 init_messages（连接后立即发送）和 auto_messages（定时发送）。
 """
 
 from __future__ import annotations
@@ -29,6 +31,9 @@ class WebSocketConnection:
         on_status: Callable | None = None,
         reconnect_delay: int = 3,
         max_reconnect_delay: int = 30,
+        init_messages: list[str] | None = None,
+        auto_messages: list[str] | None = None,
+        auto_interval: int = 10,
     ):
         self.name = name
         self.url = url
@@ -37,6 +42,9 @@ class WebSocketConnection:
         self._on_status = on_status
         self._reconnect_delay = reconnect_delay
         self._max_reconnect_delay = max_reconnect_delay
+        self._init_messages = init_messages or []
+        self._auto_messages = auto_messages or []
+        self._auto_interval = auto_interval
 
         self._ws = None
         self._session = None
@@ -45,10 +53,22 @@ class WebSocketConnection:
         self._current_delay = reconnect_delay
         self._current_url = url
         self._errors = 0
+        self._msg_timer_handle: asyncio.TimerHandle | None = None
 
     @property
     def is_connected(self) -> bool:
         return self._ws is not None and not self._ws.closed
+
+    async def send_str(self, data: str) -> bool:
+        """发送文本消息。连接断开时返回 False。"""
+        if not self._ws or self._ws.closed:
+            return False
+        try:
+            await self._ws.send_str(data)
+            return True
+        except Exception as e:
+            logger.warning(f"[WS:{self.name}] 发送失败: {e}")
+            return False
 
     async def start(self):
         """启动连接循环。"""
@@ -58,6 +78,7 @@ class WebSocketConnection:
     async def stop(self):
         """停止连接。"""
         self._running = False
+        self._cancel_msg_timer()
         if self._task:
             self._task.cancel()
             try:
@@ -86,6 +107,38 @@ class WebSocketConnection:
                 self._current_delay * 1.5, self._max_reconnect_delay
             )
 
+    async def _send_init_messages(self):
+        """连接后发送初始化消息。"""
+        for msg in self._init_messages:
+            ok = await self.send_str(msg)
+            if ok:
+                logger.info(f"[WS:{self.name}] 发送 init: {msg[:60]}")
+            await asyncio.sleep(0.5)  # 错峰
+
+    def _start_auto_timer(self):
+        """启动定时发送循环（使用 asyncio 事件循环 Timer）。"""
+        self._cancel_msg_timer()
+        if not self._auto_messages or not self._running:
+            return
+        loop = asyncio.get_event_loop()
+        self._msg_timer_handle = loop.call_later(
+            self._auto_interval, lambda: asyncio.ensure_future(self._auto_send_loop())
+        )
+
+    def _cancel_msg_timer(self):
+        if self._msg_timer_handle:
+            self._msg_timer_handle.cancel()
+            self._msg_timer_handle = None
+
+    async def _auto_send_loop(self):
+        """定时发送 auto_messages。"""
+        if not self._running or not self.is_connected:
+            return
+        for msg in self._auto_messages:
+            await self.send_str(msg)
+            await asyncio.sleep(0.3)
+        self._start_auto_timer()  # 调度下一次
+
     async def _connect_and_listen(self):
         """连接并监听消息。"""
         try:
@@ -105,6 +158,11 @@ class WebSocketConnection:
                     self._current_delay = self._reconnect_delay  # 重置退避
                     self._errors = 0
                     await self._notify_status("connected", url)
+
+                    # 连接成功后发 init 消息
+                    await self._send_init_messages()
+                    # 启动定时 auto 消息
+                    self._start_auto_timer()
                     break
                 except Exception as e:
                     logger.warning(f"[WS:{self.name}] 连接 {url} 失败: {e}")
@@ -131,6 +189,7 @@ class WebSocketConnection:
         except Exception as e:
             logger.error(f"[WS:{self.name}] 监听循环异常: {e}")
         finally:
+            self._cancel_msg_timer()
             await self._close_ws()
             if self._session and not self._session.closed:
                 await self._session.close()
@@ -183,6 +242,9 @@ class WebSocketManager:
         url: str,
         backup_url: str = "",
         reconnect_delay: int = 3,
+        init_messages: list[str] | None = None,
+        auto_messages: list[str] | None = None,
+        auto_interval: int = 10,
     ) -> WebSocketConnection:
         """添加连接配置。"""
         conn = WebSocketConnection(
@@ -192,9 +254,19 @@ class WebSocketManager:
             on_message=self._on_message,
             on_status=self._on_status,
             reconnect_delay=reconnect_delay,
+            init_messages=init_messages,
+            auto_messages=auto_messages,
+            auto_interval=auto_interval,
         )
         self._connections[name] = conn
         return conn
+
+    async def send_str(self, name: str, data: str) -> bool:
+        """向指定连接发送消息。"""
+        conn = self._connections.get(name)
+        if conn is None:
+            return False
+        return await conn.send_str(data)
 
     async def start_all(self):
         """启动所有连接。"""

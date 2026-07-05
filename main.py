@@ -140,12 +140,12 @@ def _fmt_time_short(ts: str | None) -> str:
 
 _SOURCE_DISPLAY: dict[str, str] = {
     "cea_fanstudio": "中国地震预警网", "cea_pr_fanstudio": "中国地震预警网(省)",
-    "cenc_fanstudio": "中国地震台网", "cenc_wolfx": "CENC(Wolfx)",
-    "cwa_fanstudio": "台湾气象署", "cwa_wolfx": "CWA(Wolfx)",
-    "jma_fanstudio": "日本气象厅", "jma_wolfx": "JMA(Wolfx)", "jma_wolfx_info": "JMA情报(Wolfx)",
-    "jma_wolfx_http": "JMA(Wolfx HTTP)", "jma_wolfx_info_http": "JMA情报(Wolfx HTTP)",
-    "cwa_wolfx_http": "CWA(Wolfx HTTP)", "kma_wolfx_http": "KMA(Wolfx HTTP)",
-    "sc_wolfx_http": "四川(Wolfx HTTP)", "fj_wolfx_http": "福建(Wolfx HTTP)", "cq_wolfx_http": "重庆(Wolfx HTTP)",
+    "cenc_fanstudio": "中国地震台网", "cenc_wolfx": "CEA-W(w)",
+    "cwa_fanstudio": "台湾中央氣象署", "cwa_wolfx": "CWA-W(w)",
+    "jma_fanstudio": "日本气象厅", "jma_wolfx": "JMA-W(w)", "jma_wolfx_info": "JMA-W(w)",
+    "jma_wolfx_http": "JMA-W(h)", "jma_wolfx_info_http": "JMA-W(h)",
+    "cwa_wolfx_http": "CWA-W(h)",
+    "sc_wolfx_http": "SC-W(h)", "fj_wolfx_http": "FJ-W(h)", "cq_wolfx_http": "CQ-W(h)",
     "jma_p2p_http": "JMA(P2P HTTP)", "jma_p2p_info_http": "JMA情报(P2P HTTP)", "jma_tsunami_p2p_http": "JMA海啸(P2P HTTP)",
     "jma_p2p": "JMA(P2P)",
     "usgs_fanstudio": "USGS", "emsc_fanstudio": "EMSC",
@@ -161,11 +161,12 @@ _SOURCE_DISPLAY: dict[str, str] = {
     "bmkg_http": "BMKG",
     "snet": "S-net", "icl_http": "ICL",
     "cenc_eew_province": "中国地震预警网(省)",
+    "cenc_wolfx_info_http": "CENC-W(h)",
     "beijing_fanstudio": "北京", "guangxi_fanstudio": "广西",
     "ningxia_fanstudio": "宁夏", "shanxi_fanstudio": "山西",
     "yunnan_fanstudio": "云南",
     "china_tsunami_fanstudio": "海啸", "china_weather_fanstudio": "气象",
-    "sc_wolfx_eew": "四川", "fj_wolfx_eew": "福建", "cq_wolfx_eew": "重庆",
+    "sc_wolfx_eew": "SC-W(w)", "fj_wolfx_eew": "FJ-W(w)", "cq_wolfx_eew": "CQ-W(w)",
 }
 
 
@@ -224,7 +225,7 @@ _PLUGIN_HELP = """🚨 Mix灾害预警使用说明
 
 📋 管理:
   /灾害预警            帮助
-  /灾害预警状态        服务状态
+  /灾害预警状态  服务状态（/eew /api eew）
   /灾害预警重连        重连数据源（管理）
   /灾害预警统计        事件统计
   /灾害预警统计清除    清除统计（管理）
@@ -245,7 +246,7 @@ _PLUGIN_HELP = """🚨 Mix灾害预警使用说明
 
 🔍 快捷 /cenc /cea /jma /usgs /cwa /emsc /hko /gfz /bcsf /fssn /kma /sa
       /geonet /nrcan /snet /海啸 /气象 /tg /zl /flb
-      /北京 /广西 /宁夏 /山西 /云南
+      /北京 /广西 /宁夏 /山西 /云南 /wolfx
 
   v{version} | AGPL v3 | 数据源: 已接入46+
 """
@@ -1099,6 +1100,37 @@ class MixDisasterWarningPlugin(Star):
         if msg_type in ("heartbeat", "pong"):
             return  # 心跳静默
 
+        # eqlist（地震情报列表）特殊路由—WS 推送格式与 HTTP 一致
+        if msg_type == "jma_eqlist":
+            logger.info(f"[Wolfx] JMA 地震情报路由 → jma_wolfx_info_http (type=jma_eqlist)")
+            await self.signal_bus.emit("jma_wolfx_info_http", data)
+            return
+        if msg_type == "cenc_eqlist":
+            # WS eqlist 返回50条历史数据，只推1小时内的事件
+            _now_ts = __import__("time").time()
+            _filtered = {}
+            for _k, _v in data.items():
+                if not isinstance(_v, dict) or _k == "md5":
+                    continue
+                _t = _v.get("time", "")
+                if _t:
+                    # 解析时间为 datetime → epoch，仅保留1小时内的
+                    try:
+                        _dt = __import__("datetime").datetime.strptime(str(_t), "%Y-%m-%d %H:%M:%S")
+                        _dt = _dt.replace(tzinfo=__import__("datetime").timezone.utc)
+                        if (_now_ts - _dt.timestamp()) < 3600:
+                            _filtered[_k] = _v
+                        continue
+                    except Exception:
+                        pass
+                _filtered[_k] = _v
+            if _filtered:
+                logger.info(f"[Wolfx] CENC eqlist: {len(_filtered)}/{len(data)-1} 条在1小时内")
+                await self.signal_bus.emit("cenc_wolfx_info_http", _filtered)
+            else:
+                logger.info(f"[Wolfx] CENC eqlist: 全部 {len(data)-1} 条超过1小时，不推送")
+            return
+
         sid = self._wolfx_source_map.get(msg_type)
         if sid:
             if sid in ("jma_wolfx_info",) and msg_type in ("jma_report", "jma_info"):
@@ -1140,6 +1172,7 @@ class MixDisasterWarningPlugin(Star):
             logger.error(f"[Mix] 读取配置文件失败: {e}")
 
         groups: dict = {}
+        wolfx_queries: list[str] = []  # Wolfx WS 查询指令
         for sid, entry in sources.items():
             if sid.startswith("_") or not isinstance(entry, dict):
                 continue
@@ -1153,14 +1186,36 @@ class MixDisasterWarningPlugin(Star):
             handler = entry.get("connection_handler", "")
             if handler == "http_poll":
                 continue  # HTTP 轮询源不走 WS 连接
-            if handler == "fan_studio":
-                continue  # FAN Studio 服务器已失能（DDoS + IP封禁）
+
+            # Wolfx WS 连接：收集 query_* 指令
+            if handler == "wolfx":
+                # provider_message_types 和 provider_source_names 里可能含 WS type
+                for msg_type in entry.get("provider_message_types", []):
+                    wolfx_queries.append(f"query_{msg_type}")
+                also = entry.get("provider_source_names", [])
+                for name in also:
+                    q = f"query_{name}"
+                    if q not in wolfx_queries:
+                        wolfx_queries.append(q)
+
             if handler and url:
                 key = entry.get("connection_group", handler)
                 if key not in groups:
                     groups[key] = {"url": url, "backup": entry.get("connection_backup_url", "")}
+        # 手动补充 Wolfx eqlist 查询（无对应 WS 源声明 type，但 WS all_eew 支持）
+        for _eq_q in ("query_cenceqlist", "query_jmaeqlist"):
+            if _eq_q not in wolfx_queries:
+                wolfx_queries.append(_eq_q)
+
         for name, cfg in groups.items():
-            self.ws_manager.add_connection(name, cfg["url"], cfg.get("backup", ""))
+            # Wolfx 连接：初始化时发 query 拿一次快照填充 DB（不自动重复）
+            if name == "wolfx" and wolfx_queries:
+                self.ws_manager.add_connection(
+                    name, cfg["url"], cfg.get("backup", ""),
+                    init_messages=list(wolfx_queries),  # 仅连接时发一次，不自动重复
+                )
+            else:
+                self.ws_manager.add_connection(name, cfg["url"], cfg.get("backup", ""))
 
     async def _handle_http_poll_result(self, source_id: str, raw_data: Any) -> None:
         """HTTP 轮询结果处理：追踪所有 event_id，首次入库不推，新事件再推。"""
@@ -1211,7 +1266,6 @@ class MixDisasterWarningPlugin(Star):
 
         if is_first:
             # 首次轮询：入库但不推送（防重启后旧事件刷屏）
-            # 后续轮询只推送新增的事件
             stored = 0
             if self.database:
                 for env in new_envs:
@@ -1222,13 +1276,18 @@ class MixDisasterWarningPlugin(Star):
                         pass
             logger.info(f"[HTTP] << {source_id}: {len(new_envs)} 条入库（首次静默，防重启暴发）")
         else:
-            # pipeline.handle 内部会自行入库，这里不再重复存
+            # 非首次：检查事件时间，超过1小时的不推（防 API 返回旧数据）
+            _cutoff = __import__("time").time() - 3600
             pushed = 0
             for env in new_envs:
                 ev = env.event
+                occurred = getattr(ev, "occurred_at", None) or getattr(ev, "timestamp", None)
+                # 跳过超过1小时的旧事件
+                if occurred is not None and hasattr(occurred, "timestamp"):
+                    if occurred.timestamp() < _cutoff:
+                        continue
                 mag = getattr(ev, "magnitude", None)
                 place = getattr(ev, "place_name", None) or getattr(ev, "region", None) or ""
-                occurred = getattr(ev, "occurred_at", None) or getattr(ev, "timestamp", None)
                 time_s = occurred.strftime("%H:%M:%S") if occurred else "?"
                 mag_s = f" M{mag:.1f}" if mag is not None else ""
                 if self.pipeline:
@@ -1240,7 +1299,8 @@ class MixDisasterWarningPlugin(Star):
                         logger.error(f"[HTTP] {source_id} {env.identity.event_id} pipeline.handle 失败: {ex}")
                         import traceback
                         logger.error(traceback.format_exc())
-            logger.info(f"[HTTP] << {source_id}: {pushed} 条推送")
+            if pushed:
+                logger.info(f"[HTTP] << {source_id}: {pushed} 条推送")
 
         # NRCan md5 回退警告
         if source_id == "nrcan_http":
@@ -1263,12 +1323,13 @@ class MixDisasterWarningPlugin(Star):
             # Wolfx HTTP EEW（按需轮询，查的时候即时抓）
             "jma_wolfx_http": ("https://api.wolfx.jp/jma_eew.json", 86400, False),
             "cwa_wolfx_http": ("https://api.wolfx.jp/cwa_eew.json", 86400, False),
-            "kma_wolfx_http": ("https://api.wolfx.jp/kma_eew.json", 86400, False),
             "sc_wolfx_http": ("https://api.wolfx.jp/sc_eew.json", 86400, False),
             "fj_wolfx_http": ("https://api.wolfx.jp/fj_eew.json", 86400, False),
             "cq_wolfx_http": ("https://api.wolfx.jp/cq_eew.json", 86400, False),
             # Wolfx HTTP 地震情报（备用）
             "jma_wolfx_info_http": ("https://api.wolfx.jp/jma_eqlist.json", 86400, False),
+            # CENC 地震情报 HTTP（替代 FAN CENC 报告）
+            "cenc_wolfx_info_http": ("https://api.wolfx.jp/cenc_eqlist.json", 60, False),
             # P2P HTTP 备用（EEW警报主源 + 情报）
             "jma_p2p_http": ("https://api.p2pquake.net/v2/history?codes=556&limit=1", 1, False),
             "jma_p2p_info_http": ("https://api.p2pquake.net/v2/jma/quake?limit=5", 1, False),
@@ -1550,7 +1611,9 @@ class MixDisasterWarningPlugin(Star):
             lat_s = f"{float(lat):.3f}" if lat is not None else "?"
             lon_s = f"{float(lon):.3f}" if lon is not None else "?"
             dep_s = str(depth) if depth is not None else "?"
-            fingerprint = f"{mag_s}|{place}|{dep_s}|{lat_s}|{lon_s}|{ts}|{report_num}"
+            # 去指纹时剥离 【测试】 标记（各省 API 可能带或不带，导致指纹不同）
+            _fp_place = place.replace("【测试】", "").strip()
+            fingerprint = f"{mag_s}|{_fp_place}|{dep_s}|{lat_s}|{lon_s}|{ts}|{report_num}"
         except (TypeError, ValueError):
             return
 
@@ -1574,9 +1637,16 @@ class MixDisasterWarningPlugin(Star):
             except Exception as e:
                 logger.warning(f"[CEA-PR] {name} 入库失败: {e}")
 
-        # 6) 日志（打印省名/震级/时间）
+        # 6) 日志（打印省名/震级/时间，统一转 CST 显示避免混淆）
         occurred = getattr(ev, "occurred_at", None)
-        time_s = occurred.strftime("%H:%M:%S") if occurred else "?"
+        if occurred is not None:
+            try:
+                _cst = occurred.astimezone(__import__("datetime").timezone(__import__("datetime").timedelta(hours=8)))
+                time_s = _cst.strftime("%H:%M:%S")
+            except Exception:
+                time_s = occurred.strftime("%H:%M:%S") if occurred else "?"
+        else:
+            time_s = "?"
         mag_s_log = f" M{magnitude:.1f}" if magnitude is not None else ""
         logger.info(f"[CEA-PR] {name}: {time_s}{mag_s_log} {place}（{'已入库' if stored else '入库失败'}）")
 
@@ -1589,14 +1659,24 @@ class MixDisasterWarningPlugin(Star):
             return
 
         # 门2: 事件超过1小时（防历史/测试数据）
-        # created_at 是毫秒级时间戳（13位）或秒级（10位），统一转秒
-        _now_ts = __import__("time").time()
-        _ts_raw = item.get("created_at", 0) or 0
-        if isinstance(_ts_raw, (int, float)) and _ts_raw > 1000000000:
-            _event_ts = _ts_raw / 1000 if _ts_raw > 10000000000 else _ts_raw
+        # 用 occurred_at（地震发震时间）而非 created_at（入库时间）
+        _occurred = getattr(ev, "occurred_at", None)
+        if _occurred is not None and hasattr(_occurred, "timestamp"):
+            _event_ts = _occurred.timestamp()
+            _now_ts = __import__("time").time()
             age_seconds = _now_ts - _event_ts
             if age_seconds > 3600:
                 logger.info(f"[CEA-PR] 超时不推: {name} {place}（{age_seconds:.0f}s > 3600s）")
+                return
+        else:
+            # 没有 occurred_at（原 created_at 作为最后备选）
+            _ts_raw = item.get("created_at")
+            if not isinstance(_ts_raw, (int, float)) or _ts_raw <= 1000000000:
+                logger.info(f"[CEA-PR] 超时不推: {name} {place}（无有效时间戳）")
+                return
+            _event_ts = _ts_raw / 1000 if _ts_raw > 10000000000 else _ts_raw
+            if (__import__("time").time() - _event_ts) > 3600:
+                logger.info(f"[CEA-PR] 超时不推: {name} {place}（无发震时间，fallback created_at 也超时）")
                 return
 
         # 门3: 跨省融合去重 — 同地震后续省只入库不推送
@@ -1737,7 +1817,7 @@ class MixDisasterWarningPlugin(Star):
 
     # ═══════════════════ 命令: 管理 ═══════════════════
 
-    @filter.regex(r"^/灾害预警状态$")
+    @filter.regex(r"^(?:/灾害预警状态|/eew(?:\s+api)?|/api\s+eew)$")
     async def status_cmd(self, event: AstrMessageEvent):
         lines = ["📊 Mix灾害预警状态"]
         if self.ws_manager:
@@ -2278,8 +2358,8 @@ class MixDisasterWarningPlugin(Star):
             _HTTP_SOURCES = {
                 "funvisis_http", "cenais_http", "geonet_http", "nrcan_http",
                 "tmd_http", "phivolcs_http", "csnc_http", "usgs_weekly",
-                "jma_wolfx_http", "jma_wolfx_info_http",
-                "cwa_wolfx_http", "kma_wolfx_http",
+                "jma_wolfx_http", "jma_wolfx_info_http", "cenc_wolfx_info_http",
+                "cwa_wolfx_http",
                 "sc_wolfx_http", "fj_wolfx_http", "cq_wolfx_http",
                 "jma_p2p_http", "jma_p2p_info_http", "jma_tsunami_p2p_http",
 		"bmkg_http", "icl_http",
@@ -2643,8 +2723,59 @@ class MixDisasterWarningPlugin(Star):
                 except Exception as ex:
                     logger.warning(f"[查询] CENC EEW 烈度/震度图渲染异常: {ex}")
             yield event.plain_result(text)
+        elif sub == "jma":
+            # /.eew jma → 查 JMA EEW
+            rows = await self._query_source_eew("jma_wolfx_http", 5)
+            if not rows:
+                rows = await self._query_source_eew("jma_p2p_http", 5)
+            if not rows:
+                rows = await self._query_source_eew("jma_p2p", 5)
+            if not rows:
+                rows = await self._query_source_eew("jma_wolfx", 5)
+            if not rows:
+                # DB 空时即时抓取 Wolfx HTTP
+                logger.info("[查询] jma DB 无数据，触发即时抓取")
+                try:
+                    await self.http_poll_manager.fetch_one("jma_wolfx_http")
+                except Exception as ex:
+                    logger.warning(f"[查询] jma_wolfx_http 即时抓取失败: {ex}")
+                rows = await self._query_source_eew("jma_wolfx_http", 5)
+            if not rows:
+                yield event.plain_result("📡 JMA EEW 暂无数据")
+                return
+            from datetime import datetime
+            from .message.presenters import present_eew
+            from .domain.models import EewEvent
+            lines_parts = ["📡 JMA 紧急地震速報"]
+            for r in rows[:5]:
+                try:
+                    ts = r.get("time") or ""
+                    occurred_at = None
+                    if ts:
+                        try:
+                            occurred_at = datetime.fromisoformat(ts)
+                        except (ValueError, TypeError):
+                            try:
+                                occurred_at = datetime.strptime(ts[:19].replace("T", " "), "%Y-%m-%d %H:%M:%S")
+                            except (ValueError, TypeError):
+                                pass
+                    eew = EewEvent(
+                        source_id="jma",
+                        event_id=r.get("real_event_id", ""),
+                        occurred_at=occurred_at,
+                        latitude=r.get("latitude"),
+                        longitude=r.get("longitude"),
+                        depth=r.get("depth"),
+                        magnitude=r.get("magnitude"),
+                        place_name=r.get("place_name") or "",
+                        max_intensity=r.get("max_intensity") or "",
+                    )
+                    lines_parts.append(present_eew(eew))
+                except Exception:
+                    continue
+            yield event.plain_result("\n".join(lines_parts))
         else:
-            yield event.plain_result("用法: /.eew cea [省份]")
+            yield event.plain_result("用法: /.eew cea [省份] | /.eew jma")
 
     async def _query_cenc_province(self, event: AstrMessageEvent, province_name: str):
         """查询指定省的最新 CENC EEW。"""
@@ -2727,6 +2858,143 @@ class MixDisasterWarningPlugin(Star):
             except Exception as ex:
                 logger.warning(f"[查询] {matched_name} 双图渲染异常: {ex}")
         yield event.plain_result(text)
+
+    @filter.regex(r"^/wolfx(?:\s|$)")
+    async def q_wolfx(self, e):
+        """Wolfx 即时查询 — /wolfx <源> [类型]  按推送格式显示。
+
+        源: jma, cenc, cwa
+        类型: eew (默认), report
+        /wolfx wss <源> [类型] — 走真实 WS query 验证解析
+        示例: /wolfx jma, /wolfx wss jma eew, /wolfx wss cenc report
+        """
+        raw_text = e.message_str if hasattr(e, 'message_str') else str(e.message_obj)
+        parts = raw_text.strip().split()
+        if len(parts) < 2:
+            yield e.plain_result("用法: /wolfx <源> [类型]\n  源: jma, cenc, cwa\n  类型: eew (默认), report\n  示例: /wolfx jma")
+            return
+
+        source = parts[1].lower()
+        stype = parts[2].lower() if len(parts) >= 3 else "eew"
+        # /wolfx wss <源> — 用 WS 解析器
+        use_wss = (source == "wss")
+        if use_wss:
+            source = stype
+            stype = parts[3].lower() if len(parts) >= 4 else "eew"
+
+        WOLFX_ENDPOINTS = {
+            "jma": {
+                "eew":    ("jma_wolfx_http",     "https://api.wolfx.jp/jma_eew.json"),
+                "report": ("jma_wolfx_info_http", "https://api.wolfx.jp/jma_eqlist.json"),
+            },
+            "cenc": {
+                "eew":    ("cenc_wolfx",            "https://api.wolfx.jp/cenc_eew.json"),
+                "report": ("cenc_wolfx_info_http",  "https://api.wolfx.jp/cenc_eqlist.json"),
+            },
+            "cwa": {
+                "eew":    ("cwa_wolfx_http", "https://api.wolfx.jp/cwa_eew.json"),
+            },
+        }
+        # /wolfx wss <源> [类型] — 实时 WS query，走 WS 解析器
+        WSS_ENDPOINTS = {
+            "jma": {
+                "eew":    ("jma_wolfx",            "query_jmaeew"),
+                "report": ("jma_wolfx_info",       "query_jmaeqlist"),
+            },
+            "cenc": {
+                "eew":    ("cenc_wolfx",           "query_cenceew"),
+                "report": ("cenc_wolfx_info_http", "query_cenceqlist"),
+            },
+            "cwa": {
+                "eew":    ("cwa_wolfx",            "query_cwaeew"),
+            },
+        }
+
+        if use_wss:
+            src_cfg = WSS_ENDPOINTS.get(source, {}).get(stype)
+            if not src_cfg:
+                avail = ", ".join(f"{k}({', '.join(v.keys())})" for k, v in WSS_ENDPOINTS.items())
+                yield e.plain_result(f"❌ 不支持的源/类型。可用: {avail}")
+                return
+            sid, query_cmd = src_cfg
+            data = await self._fetch_wolfx_ws_query(query_cmd)
+            if data is None:
+                yield e.plain_result(f"❌ WS 连接 '{ws_name}' 未就绪或请求超时")
+                return
+        else:
+            src_cfg = WOLFX_ENDPOINTS.get(source, {}).get(stype)
+            if not src_cfg:
+                avail = ", ".join(f"{k}({', '.join(v.keys())})" for k, v in WOLFX_ENDPOINTS.items())
+                yield e.plain_result(f"❌ 不支持的源/类型。可用: {avail}")
+                return
+            sid, url = src_cfg
+            try:
+                async with aiohttp.ClientSession() as sess:
+                    async with sess.get(url, timeout=10) as resp:
+                        if resp.status != 200:
+                            yield e.plain_result(f"❌ Wolfx API {resp.status}")
+                            return
+                        data = await resp.json()
+            except Exception as ex:
+                yield e.plain_result(f"❌ 请求失败: {ex}")
+                return
+
+        # 解析
+        try:
+            from .parser.registry import ParserRegistry
+        except ImportError:
+            from parser.registry import ParserRegistry
+        parser = ParserRegistry.get(sid)
+        if not parser:
+            yield e.plain_result(f"❌ 解析器 {sid} 未注册")
+            return
+        result = parser.parse_message(data)
+        if not result:
+            yield e.plain_result(f"📡 {source.upper()} {stype} 暂无数据")
+            return
+        envelopes = result if isinstance(result, list) else [result]
+        if not envelopes:
+            yield e.plain_result(f"📡 {source.upper()} {stype} 暂无数据")
+            return
+
+        # 按推送格式展示（使用相同的 presenter）
+        from .message.presenters import present_eew, present_earthquake_report
+        display_name = _SOURCE_DISPLAY.get(sid, sid)
+        if use_wss:
+            display_name += " [WS Parser]"
+        lines = [f"📡 {display_name}"]
+        last_ev = None
+        for env in envelopes[:1]:
+            ev = env.event
+            last_ev = ev
+            if hasattr(ev, "is_warn"):  # EewEvent
+                lines.append(present_eew(ev))
+            else:  # EarthquakeReport
+                lines.append(present_earthquake_report(ev))
+        text = "\n".join(lines)
+
+        # EEW 查询附烈度震度双图
+        if last_ev is not None and hasattr(last_ev, "is_warn"):
+            mag = getattr(last_ev, "magnitude", None)
+            depth = getattr(last_ev, "depth", None)
+            if mag is not None and depth is not None and self._intensity_img_renderer:
+                try:
+                    s_path, i_path = self._intensity_img_renderer.render_both(mag, depth)
+                    b64_list = []
+                    for p in (s_path, i_path):
+                        if p and os.path.exists(p):
+                            with open(p, "rb") as f:
+                                b64_list.append(base64.b64encode(f.read()).decode())
+                            try:
+                                os.unlink(p)
+                            except Exception:
+                                pass
+                    if b64_list:
+                        yield e.chain_result([Plain(text)] + [Image.fromBase64(b) for b in b64_list])
+                        return
+                except Exception as ex:
+                    logger.warning(f"[Wolfx] 烈度/震度图渲染异常: {ex}")
+        yield e.plain_result(text)
 
     @filter.regex(r"^/jma(?:\s|$)")
     async def q_jma(self, e):
@@ -3481,6 +3749,31 @@ class MixDisasterWarningPlugin(Star):
         async for r in self._quick_query(e, "csnc_http", "CSNC"): yield r
 
     # ═══════════════════ 辅助 ═══════════════════
+
+    async def _fetch_wolfx_ws_query(self, query_cmd: str, timeout_s: int = 10) -> dict | None:
+        """建立临时 WS 连接发 query_* 指令，等待响应后断开。"""
+        url = "wss://ws-api.wolfx.jp/all_eew"
+        try:
+            import aiohttp
+            async with aiohttp.ClientSession() as sess:
+                ws = await sess.ws_connect(url, heartbeat=30)
+                await ws.send_str(query_cmd)
+                start = __import__("time").time()
+                async for msg in ws:
+                    if __import__("time").time() - start > timeout_s:
+                        break
+                    if msg.type == aiohttp.WSMsgType.TEXT:
+                        try:
+                            d = __import__("json").loads(msg.data)
+                            if d.get("type") != "heartbeat":
+                                await ws.close()
+                                return d
+                        except Exception:
+                            continue
+                await ws.close()
+        except Exception as e:
+            logger.warning(f"[WSS] 临时 WS 查询失败: {e}")
+        return None
 
     async def _is_admin(self, event: AstrMessageEvent) -> bool:
         try:

@@ -75,9 +75,30 @@ class PushExecutionService:
         self.big_alert_service = BigEarthquakeAlertService(config)
 
     async def _render_event_map(self, envelope: EventEnvelope) -> list[str] | None:
-        """[占位] 震中方位图 — 待仿照 S-Net 底图方式重写（不需要 FAN 瓦片代理）。"""
-        # TODO: 后续用自定义地图底图（类似 S-Net 的 MSIL 瓦片）替代此占位
-        return None
+        """渲染震中方位图（双图：缩略图 + 细节图）。"""
+        ev = envelope.event
+        lat = getattr(ev, "latitude", None)
+        lon = getattr(ev, "longitude", None)
+        if lat is None or lon is None:
+            return None
+        if not self.map_builder:
+            return None
+        try:
+            config = dict(self.config)
+            # 缩略图 zoom4
+            zoom = config.get("map_zoom_level", 4)
+            thumb = await self.map_builder.render_map_image(lat, lon, {**config, "map_zoom_level": max(zoom - 2, 2)})
+            # 细节图 zoom8
+            detail = await self.map_builder.render_map_image(lat, lon, {**config, "map_zoom_level": zoom + 2})
+            result = []
+            if thumb:
+                result.append(thumb)
+            if detail:
+                result.append(detail)
+            return result if result else None
+        except Exception as e:
+            logger.warning(f"[Map] 渲染震中方位图失败: {e}")
+            return None
 
     async def _render_snet_map(self, envelope: EventEnvelope) -> list[str] | None:
         """渲染 S-Net 测站分布图，返回 base64 列表。"""
@@ -515,7 +536,7 @@ class PushExecutionService:
                 for i in range(alert_count):
                     for session_id in sessions:
                         try:
-                            await self.sender.send(session_id, alert_text)
+                            await self.sender.send(session_id, [Plain(alert_text)])
                         except Exception as e:
                             logger.error(f"[Push] 大喇叭第 {i+1} 次发送失败: {e}")
 
