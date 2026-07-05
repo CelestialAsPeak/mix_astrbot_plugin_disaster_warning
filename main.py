@@ -422,11 +422,24 @@ class MixDisasterWarningPlugin(Star):
                                             _cur_ef[_fid][_k] = _v
                             self.config["earthquake_filters"] = _cur_ef
                         # groups: 补充命名群组（跳过 default）
-                        _file_grp = _file_cfg.get("groups")
-                        if isinstance(_file_grp, dict):
+                        _file_grp_raw = _file_cfg.get("groups")
+                        _file_grp = {}
+                        if isinstance(_file_grp_raw, dict):
+                            _file_grp = _file_grp_raw
+                        elif isinstance(_file_grp_raw, str):
+                            try:
+                                _parsed = json.loads(_file_grp_raw)
+                                if isinstance(_parsed, dict):
+                                    _file_grp = _parsed
+                            except (json.JSONDecodeError, TypeError):
+                                pass
+                        if _file_grp:
                             _cur_grp = self.config.get("groups", {})
                             if not isinstance(_cur_grp, dict):
-                                _cur_grp = {}
+                                try:
+                                    _cur_grp = json.loads(_cur_grp) if isinstance(_cur_grp, str) else {}
+                                except (json.JSONDecodeError, TypeError):
+                                    _cur_grp = {}
                             for _gid, _gcfg in _file_grp.items():
                                 if _gid != "default":
                                     _cur_grp[_gid] = _gcfg

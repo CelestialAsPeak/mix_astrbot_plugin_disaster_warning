@@ -78,6 +78,31 @@ class SessionConfigManager:
 
     # ── 群组查询 ──
 
+    @staticmethod
+    def _normalize_groups(raw_groups: Any) -> dict[str, dict[str, Any]]:
+        """将 groups 配置归一化为 dict。
+
+        支持两种格式输入：
+        - dict: 直接使用（旧格式）
+        - str: JSON 字符串（AstrBot 管理面板因不支持嵌套对象渲染，改用 string 显示）
+        """
+        if isinstance(raw_groups, dict):
+            return {
+                str(k): dict(v) if isinstance(v, dict) else {}
+                for k, v in raw_groups.items()
+            }
+        if isinstance(raw_groups, str):
+            try:
+                parsed = json.loads(raw_groups)
+                if isinstance(parsed, dict):
+                    return {
+                        str(k): dict(v) if isinstance(v, dict) else {}
+                        for k, v in parsed.items()
+                    }
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return {}
+
     def list_groups(self) -> dict[str, dict[str, Any]]:
         """返回所有群组配置（含来自全局配置的静态群组和来自 overrides 的动态群组）。
 
@@ -86,10 +111,8 @@ class SessionConfigManager:
         """
         groups: dict[str, dict[str, Any]] = {}
         # 1. 全局配置中注册的群组
-        cfg_groups = self.global_config.get("groups", {})
-        if isinstance(cfg_groups, dict):
-            for gid, gcfg in cfg_groups.items():
-                groups[gid] = dict(gcfg) if isinstance(gcfg, dict) else {}
+        cfg_groups = self._normalize_groups(self.global_config.get("groups", {}))
+        groups.update(cfg_groups)
         # 2. 没有全局群组时，把 target_sessions 当作默认群组
         if not groups:
             sessions = self.global_config.get("target_sessions", [])
