@@ -426,24 +426,22 @@ class MixDisasterWarningPlugin(Star):
                         _file_grp = {}
                         if isinstance(_file_grp_raw, dict):
                             _file_grp = _file_grp_raw
-                        elif isinstance(_file_grp_raw, str):
-                            try:
-                                _parsed = json.loads(_file_grp_raw)
-                                if isinstance(_parsed, dict):
-                                    _file_grp = _parsed
-                            except (json.JSONDecodeError, TypeError):
-                                pass
+                        elif isinstance(_file_grp_raw, list):
+                            # 新版 list 格式：["group_a", "group_b"]
+                            _file_grp = {g: {} for g in _file_grp_raw if isinstance(g, str)}
                         if _file_grp:
-                            _cur_grp = self.config.get("groups", {})
-                            if not isinstance(_cur_grp, dict):
-                                try:
-                                    _cur_grp = json.loads(_cur_grp) if isinstance(_cur_grp, str) else {}
-                                except (json.JSONDecodeError, TypeError):
-                                    _cur_grp = {}
-                            for _gid, _gcfg in _file_grp.items():
-                                if _gid != "default":
-                                    _cur_grp[_gid] = _gcfg
-                            self.config["groups"] = _cur_grp
+                            _cur_grp = self.config.get("groups", [])
+                            if isinstance(_cur_grp, list):
+                                # list 格式：合并群组名（去重）
+                                _names = set(_cur_grp)
+                                _names.update(_file_grp.keys())
+                                self.config["groups"] = sorted(_names)
+                            elif isinstance(_cur_grp, dict):
+                                # dict 格式：补充 key
+                                for _gid in _file_grp:
+                                    if _gid != "default":
+                                        _cur_grp[_gid] = {}
+                                self.config["groups"] = _cur_grp
                         # 其他字段直接覆盖
                         for _k in ("push_frequency_control",
                                    "message_format", "weather_config", "strategies",

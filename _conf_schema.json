@@ -18,10 +18,10 @@
     "default": []
   },
   "groups": {
-    "description": "📢 多群组推送配置",
-    "type": "string",
-    "hint": "JSON 格式的群组配置。管理面板仅显示，编辑请用 /灾害预警群组 命令。\n格式：{\"群组ID\": {\"sessions\": [\"会话ID\"], \"description\": \"备注\"}}\n示例命令：\n  /灾害预警群组 set sleep_group sessions 群号1,群号2\n  /灾害预警群组 detail sleep_group",
-    "default": "{}"
+    "description": "📢 群组列表",
+    "type": "list",
+    "hint": "每行一个群组标识名（如 sleep_group）。详情（会话/过滤）通过 /灾害预警群组 命令管理。\n示例命令：\n  /灾害预警群组 set sleep_group sessions 群号1,群号2\n  /灾害预警群组 set sleep_group description 睡眠群组\n  /灾害预警群组 detail sleep_group",
+    "default": []
   },
   "offline_notification_sessions": {
     "description": "离线通知接收会话列表",
