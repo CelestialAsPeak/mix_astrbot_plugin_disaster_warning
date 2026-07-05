@@ -2389,7 +2389,6 @@ class MixDisasterWarningPlugin(Star):
             bot_id = event.get_self_id() or "0"
             bot_name = "夜幕百里"
             nodes = Nodes([])
-            # DB 统计
             db_count = 0
             if self.database:
                 try:
@@ -2402,74 +2401,57 @@ class MixDisasterWarningPlugin(Star):
             now_str = datetime.now().strftime("%m-%d %H:%M")
             header_text = (
                 f"CEA-PR 中国地震预警网 省级融合源 最新数据\n"
-                f"省份数量统计: {len(_CENC_PROVINCES)}\n"
-                f"数据库入库数据数量: {db_count}\n"
-                f"最新获取时间: {now_str}"
+                f"省份: {len(_CENC_PROVINCES)} | 入库: {db_count} | {now_str}"
             )
             nodes.nodes.append(Node(uin=bot_id, name=bot_name, content=[Plain(header_text)]))
             async with aiohttp.ClientSession(headers=headers) as session:
                 for name, app_id in _CENC_PROVINCES:
-                    short = _CENC_SHORT_NAME.get(app_id, name.replace("地震预警网", "").replace("省", ""))
+                    short = _CENC_SHORT_NAME.get(app_id, name.replace("地震预警网", ""))
                     payload = {
                         "app_id": app_id,
-                        "page_query": {"page_no": 1, "page_size": 1},
+                        "page_query": {"page_no": 1, "page_size": 10},
                     }
                     try:
                         async with session.post(f"{_CENC_BASE}/api/earthquake/event/v1/list", json=payload, timeout=10) as resp:
                             if resp.status != 200:
-                                nodes.nodes.append(Node(uin=bot_id, name=bot_name, content=[Plain(f"{short}地震预警网 HTTP{resp.status}")]))
+                                nodes.nodes.append(Node(uin=bot_id, name=bot_name, content=[Plain(f"✗ {short} HTTP{resp.status}")]))
                                 continue
                             data = await resp.json()
                             if data.get("code") != 0:
-                                nodes.nodes.append(Node(uin=bot_id, name=bot_name, content=[Plain(f"{short}地震预警网 {data.get('msg','?')}")]))
+                                nodes.nodes.append(Node(uin=bot_id, name=bot_name, content=[Plain(f"✗ {short} {data.get('msg','?')}")]))
                                 continue
                             infos = (data.get("data") or {}).get("spot_infos", [])
                             if not infos:
-                                nodes.nodes.append(Node(uin=bot_id, name=bot_name, content=[Plain(f"{short}地震预警网 无数据")]))
+                                nodes.nodes.append(Node(uin=bot_id, name=bot_name, content=[Plain(f"- {short} 无数据")]))
                                 continue
                             eq = infos[0]
-                            eid = eq.get("id", "?")
-                            raw_ts = eq.get("created_at", 0)
-                            if raw_ts:
-                                ts = datetime.fromtimestamp(raw_ts).strftime("%Y年%m月%d日 %H:%M:%S")
-                            else:
-                                ts = "?"
+                            ts = datetime.fromtimestamp(eq.get("created_at", 0)).strftime("%Y年%m月%d日 %H:%M:%S") if eq.get("created_at") else "?"
                             mag = eq.get("level", "?")
-                            dep = eq.get("depth")
-                            dep_s = f"{dep}km" if dep is not None else "不明"
-                            loc = eq.get("location", "?")
-                            raw_lat = eq.get("latitude")
-                            raw_lon = eq.get("longitude")
-                            lat_s = f"{abs(raw_lat):.3f}{'N' if raw_lat >= 0 else 'S'}" if raw_lat is not None else "?"
-                            lon_s = f"{abs(raw_lon):.3f}{'E' if raw_lon >= 0 else 'W'}" if raw_lon is not None else "?"
-                            serial = eq.get("serial_number")
-                            serial_s = f"第{serial}报" if serial else ""
-                            epi = eq.get("epicenter_intensity")
-                            epi_s = f"{epi}" if epi is not None else "不明"
-                            node_text = (
-                                f"{short}地震预警网 地震预警-{serial_s}\n"
-                                f"时间: {ts}\n"
-                                f"震中: {loc}\n"
-                                f"经纬度: {lon_s} {lat_s}\n"
-                                f"震级: M{mag}\n"
-                                f"深度: {dep_s}\n"
-                                f"预估最大烈度: {epi_s}\n"
-                                f"事件ID: {eid}"
-                            )
+                            dep = eq.get("depth", "?")
+                            loc = (eq.get("location") or "?")[:16]
                     except Exception as ex:
-                        nodes.nodes.append(Node(uin=bot_id, name=bot_name, content=[Plain(f"{short}地震预警网 {str(ex)[:30]}")]))
+                        nodes.nodes.append(Node(uin=bot_id, name=bot_name, content=[Plain(f"✗ {short} {str(ex)[:30]}")]))
                         continue
+                    epi = eq.get("epicenter_intensity")
+                    epi_s = f"烈度{epi}" if epi is not None else "烈度不明"
+                    serial = eq.get("serial_number")
+                    serial_s = f" 第{serial}报" if serial else ""
+                    lat = eq.get("latitude")
+                    lon = eq.get("longitude")
+                    lat_s = f"{abs(lat):.3f}{'N' if lat is not None and lat >= 0 else 'S'}" if lat is not None else "?"
+                    lon_s = f"{abs(lon):.3f}{'E' if lon is not None and lon >= 0 else 'W'}" if lon is not None else "?"
+                    eid = str(eq.get("id", "?"))[-12:]
+                    node_text = (
+                        f"{short}地震预警网{serial_s}\n"
+                        f"时间: {ts} 震中: {loc}\n"
+                        f"震级: M{mag} 深度: {dep}km\n"
+                        f"经纬度: {lon_s} {lat_s} | {epi_s}\n"
+                        f"ID: {eid}"
+                    )
                     nodes.nodes.append(Node(uin=bot_id, name=bot_name, content=[Plain(node_text)]))
                     ok_count += 1
             nodes.nodes.append(Node(uin=bot_id, name=bot_name, content=[Plain(f"成功: {ok_count}/{len(_CENC_PROVINCES)}")]))
-            # 尝试发聊天记录，失败则降级为文本
-            try:
-                yield event.chain_result([nodes])
-            except Exception:
-                yield event.plain_result("\n".join(
-                    [header_text] +
-                    [n.content[0].text for n in nodes.nodes[1:] if n.content]
-                ))
+            yield event.chain_result([nodes])
             return
 
         # ── /cea <省份> → 查某省最新 ──
