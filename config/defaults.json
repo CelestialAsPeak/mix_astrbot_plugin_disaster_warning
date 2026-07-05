@@ -61,7 +61,10 @@
       "csnc": false,
       "phivolcs": false,
       "snet": false,
-      "bmkg": false
+      "bmkg": false,
+      "cenc_eew": false,
+      "cenc_eew_province": false,
+      "cenc_report": false
     },
     "typhoon": {
       "enabled": false,
@@ -239,6 +242,21 @@
       "enabled": true,
       "min_magnitude": 4.0,
       "最小烈度": 3
+    },
+    "cenc_eew_filter": {
+      "enabled": true,
+      "min_magnitude": 3.0,
+      "最小烈度": 4.0
+    },
+    "cenc_eew_province_filter": {
+      "enabled": true,
+      "min_magnitude": 3.0,
+      "最小烈度": 4.0
+    },
+    "cenc_report_filter": {
+      "enabled": true,
+      "min_magnitude": 3.0,
+      "最小烈度": 4.0
     }
   },
   "push_frequency_control": {

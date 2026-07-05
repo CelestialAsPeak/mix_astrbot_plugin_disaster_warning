@@ -307,6 +307,16 @@
             "description": "NIED S-Net 海底震度分布",
             "type": "bool",
             "default": false
+          },
+          "cenc_eew": {
+            "description": "CENC 省网 EEW 报警（替代 FAN CEA）",
+            "type": "bool",
+            "default": false
+          },
+          "cenc_report": {
+            "description": "CENC 省网正式地震报告（替代 FAN CENC）",
+            "type": "bool",
+            "default": false
           }
         }
       },

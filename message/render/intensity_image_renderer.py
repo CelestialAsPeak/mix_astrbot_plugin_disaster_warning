@@ -142,7 +142,7 @@ def _estimate_csis(mag: float, depth_km: float = 10.0) -> float:
         0.2 * (line_dis - 10.0),
         0.0,
     )
-    cea1 = 1.297 * mag - 4.368 * math.log10(0.0 + 15.0) + 5.363
+    cea1 = 1.297 * mag - 4.368 * math.log10(line_dis + 15.0) + 5.363
     cea2 = 1.297 * mag - 4.368 * math.log10(hypo_dis + 15.0) + 5.363
     return (cea1 + cea2) / 2.0
 

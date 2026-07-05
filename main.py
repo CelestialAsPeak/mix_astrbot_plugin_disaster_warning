@@ -9,11 +9,14 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import json
 import os
 import tempfile
 from pathlib import Path
 from typing import Any
+
+import aiohttp
 
 from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import AstrMessageEvent, filter, MessageChain
@@ -80,6 +83,8 @@ from .parser.p2p import http_eew as p2p_http_eew, http_report as p2p_http_report
 from .parser import global_quake as gq_parser, snet as snet_parser
 from .parser.http_poll import parsers as http_poll_parsers
 from .parser.http_poll import icl_parser  # noqa: F401 — ICL 注册
+from .parser.http_poll import cenc_eew  # noqa: F401 — CENC EEW
+from .parser.http_poll import cenc_report  # noqa: F401 — CENC 报告
 from .parser.typhoon import cma as typhoon_cma, jma as typhoon_jma
 
 
@@ -155,6 +160,7 @@ _SOURCE_DISPLAY: dict[str, str] = {
     "nrcan_http": "NRCan", "usgs_weekly": "USGS周报",
     "bmkg_http": "BMKG",
     "snet": "S-net", "icl_http": "ICL",
+    "cenc_eew_province": "中国地震预警网(省)",
     "beijing_fanstudio": "北京", "guangxi_fanstudio": "广西",
     "ningxia_fanstudio": "宁夏", "shanxi_fanstudio": "山西",
     "yunnan_fanstudio": "云南",
@@ -248,6 +254,80 @@ _PLUGIN_HELP = """🚨 Mix灾害预警使用说明
 # ═══════════════════════════ 主插件 ═══════════════════════════
 
 
+# ── CENC 省网 API 配置（替代 FAN Studio） ──
+# API: POST https://yjfw.cenc.ac.cn/api/earthquake/event/v1/list
+# alarm_type=1 → EEW, 无 alarm_type → 正式报告
+
+_CENC_BASE = "https://yjfw.cenc.ac.cn"
+_CENC_NATIONAL_APP_ID = "dkcxbftqof0h"  # 全国地震预警网汇总
+
+_CENC_PROVINCES: list[tuple[str, str]] = [
+    ("吉林省地震预警网",    "dpxg86itciyp"),
+    ("北京市地震预警网",    "dpy5rsc2zzep"),
+    ("天津市地震预警网",    "dopmqd8mw0e9"),
+    ("上海市地震预警网",    "dophp7576p6p"),
+    ("重庆市地震预警网",    "dqiz92g2cw75"),
+    ("河北省地震预警网",    "dkdc0x13wvsx"),
+    ("山西省地震预警网",    "dopmdvabu9s1"),
+    ("内蒙古地震预警网",    "dp4rw2h79c01"),
+    ("辽宁省地震预警网",    "dpb408jj91q9"),
+    ("黑龙江省地震预警网",  "drhl102u3qpt"),
+    ("江苏省地震预警网",    "dkdd7p1kahoh"),
+    ("浙江省地震预警网",    "dpqcusq8ctfl"),
+    ("安徽省地震预警网",    "dopdvog4fim9"),
+    ("福建省地震预警网",    "dopx7fmkf18h"),
+    ("江西省地震预警网",    "dp045wriv6dd"),
+    ("山东省地震预警网",    "dq3jb3raal8h"),
+    ("河南省地震预警网",    "dpx8o9smyqdd"),
+    ("湖北省地震预警网",    "dpw2zk8cu1oh"),
+    ("湖南省地震预警网",    "dtuzi85h4g75"),
+    ("广东省地震预警网",    "dkdccx9ldzwh"),
+    ("广西地震预警网",      "dp18nm01a9kx"),
+    ("海南省地震预警网",    "dkg67hzs5u69"),
+    ("四川省地震预警网",    "jlgdugo1oifc"),
+    ("贵州省地震预警网",    "doplp1n82sch"),
+    ("云南省地震预警网",    "dp0i22654uf5"),
+    ("西藏地震预警网",      "e76jgn4e7dvl"),
+    ("陕西省地震预警网",    "dopgbktlr2td"),
+    ("甘肃省地震预警网",    "dkdco8fp1n29"),
+    ("青海省地震预警网",    "doplg1roj475"),
+    ("宁夏地震预警网",      "donnrac7q4g1"),
+    ("新疆地震预警网",      "dkg5ddyw01kx"),
+]
+
+# CEA-PR 低频省份（10-20s 轮询间隔）
+_CEAPR_LOW_FREQ: set[str] = {
+    "dpxg86itciyp",  # 吉林
+    "dpy5rsc2zzep",  # 北京
+    "dopmqd8mw0e9",  # 天津
+    "dophp7576p6p",  # 上海
+    "dkdc0x13wvsx",  # 河北
+    "donnrac7q4g1",  # 宁夏
+    "dopgbktlr2td",  # 陕西
+    "doplp1n82sch",  # 贵州
+    "dkg67hzs5u69",  # 海南
+}
+
+_CENC_SHORT_NAME: dict[str, str] = {
+    "dpxg86itciyp": "吉林", "dpy5rsc2zzep": "北京",
+    "dopmqd8mw0e9": "天津", "dophp7576p6p": "上海",
+    "dqiz92g2cw75": "重庆", "dkdc0x13wvsx": "河北",
+    "dopmdvabu9s1": "山西", "dp4rw2h79c01": "内蒙古",
+    "dpb408jj91q9": "辽宁", "drhl102u3qpt": "黑龙江",
+    "dkdd7p1kahoh": "江苏", "dpqcusq8ctfl": "浙江",
+    "dopdvog4fim9": "安徽", "dopx7fmkf18h": "福建",
+    "dp045wriv6dd": "江西", "dq3jb3raal8h": "山东",
+    "dpx8o9smyqdd": "河南", "dpw2zk8cu1oh": "湖北",
+    "dtuzi85h4g75": "湖南", "dkdccx9ldzwh": "广东",
+    "dp18nm01a9kx": "广西", "dkg67hzs5u69": "海南",
+    "jlgdugo1oifc": "四川", "doplp1n82sch": "贵州",
+    "dp0i22654uf5": "云南", "e76jgn4e7dvl": "西藏",
+    "dopgbktlr2td": "陕西", "dkdco8fp1n29": "甘肃",
+    "doplg1roj475": "青海", "donnrac7q4g1": "宁夏",
+    "dkg5ddyw01kx": "新疆",
+}
+
+
 class MixDisasterWarningPlugin(Star):
     """Mix灾害预警插件。"""
 
@@ -334,11 +414,12 @@ class MixDisasterWarningPlugin(Star):
                                 if _fid not in _cur_ef:
                                     _cur_ef[_fid] = _fcfg  # 补充缺失的 filter
                                 elif isinstance(_fcfg, dict):
-                                    # 已存在的 filter：只有文件有非零值才覆盖（用户通过 Web 界面设的）
+                                    # 已存在的 filter：只有文件有非零值才合并（不覆盖用户 WebUI 设的其他字段）
                                     _fm = _fcfg.get("min_magnitude", 0)
                                     _fi = _fcfg.get("最小烈度", 0)
                                     if _fm != 0 or _fi != 0:
-                                        _cur_ef[_fid] = _fcfg
+                                        for _k, _v in _fcfg.items():
+                                            _cur_ef[_fid][_k] = _v
                             self.config["earthquake_filters"] = _cur_ef
                         # groups: 补充命名群组（跳过 default）
                         _file_grp = _file_cfg.get("groups")
@@ -347,7 +428,7 @@ class MixDisasterWarningPlugin(Star):
                             if not isinstance(_cur_grp, dict):
                                 _cur_grp = {}
                             for _gid, _gcfg in _file_grp.items():
-                                if _gid != "default" and _gid not in _cur_grp:
+                                if _gid != "default":
                                     _cur_grp[_gid] = _gcfg
                             self.config["groups"] = _cur_grp
                         # 其他字段直接覆盖
@@ -370,7 +451,8 @@ class MixDisasterWarningPlugin(Star):
                                     _fm = _fcfg.get("min_magnitude", 0)
                                     _fi = _fcfg.get("最小烈度", 0)
                                     if _fm != 0 or _fi != 0:
-                                        _cur_sleep[_fid] = _fcfg
+                                        for _k, _v in _fcfg.items():
+                                            _cur_sleep[_fid][_k] = _v
                             self.config["sleep_earthquake_filters"] = _cur_sleep
                             # 调试日志：追踪 GQ sleep filter 值
                             _gq_sleep = _cur_sleep.get("global_quake_filter", {})
@@ -382,18 +464,31 @@ class MixDisasterWarningPlugin(Star):
             except Exception as _e:
                 logger.warning(f"[Mix] 无法从文件加载生产配置: {_e}")
 
-            # ── sleep_earthquake_filters: 从独立文件加载（绕过 AstrBot 配置持久化 bug）──
+            # ── sleep_earthquake_filters: 以 WebUI 配置为准，独立文件仅作备份 ──
             self._sleep_filters_path = self._get_storage_path() / "sleep_filters.json"
             try:
+                # 1) 主配置（WebUI 保存的位置）— 权威来源
+                main_sleep = dict(self.config.get("sleep_earthquake_filters", {}) or {})
+                # 2) 独立文件备份（用于启动时补全）
+                file_sleep: dict = {}
                 if self._sleep_filters_path.exists():
                     with open(self._sleep_filters_path, encoding="utf-8") as _sf:
-                        _sf_data = json.load(_sf)
-                    if isinstance(_sf_data, dict) and _sf_data:
-                        self.config["sleep_earthquake_filters"] = _sf_data
-                        logger.info(f"[Mix] 已从 sleep_filters.json 加载睡眠阈值")
-                        _gq = _sf_data.get("global_quake_filter", {})
-                        if isinstance(_gq, dict):
-                            logger.info(f"[Mix] sleep GQ 最小烈度（独立文件）= {_gq.get('最小烈度', '未配置')}")
+                        file_sleep = json.load(_sf)
+                    if not isinstance(file_sleep, dict):
+                        file_sleep = {}
+                # 3) 主配置优先，文件补缺失项，合并结果写回文件
+                merged = dict(main_sleep)
+                for k, v in file_sleep.items():
+                    if k not in merged:
+                        merged[k] = v
+                if merged:
+                    self.config["sleep_earthquake_filters"] = merged
+                    try:
+                        with open(self._sleep_filters_path, "w", encoding="utf-8") as _sf:
+                            json.dump(merged, _sf, ensure_ascii=False, indent=2)
+                    except Exception:
+                        pass
+                    logger.info(f"[Mix] 睡眠阈值已同步（{len(merged)} 个过滤器）")
             except Exception as _e:
                 logger.warning(f"[Mix] 加载 sleep_filters.json 失败: {_e}")
 
@@ -507,6 +602,7 @@ class MixDisasterWarningPlugin(Star):
             self._setup_http_pollers(sources, router)
 
             self._start_time = __import__("time").time()
+            self._running = True  # CENC EEW 轮询循环条件
             self._service_task = asyncio.create_task(self._run_service())
             self._setup_done = True
             logger.info("[Mix] 初始化完成")
@@ -518,6 +614,7 @@ class MixDisasterWarningPlugin(Star):
 
     async def terminate(self):
         logger.info("[Mix] 停止...")
+        self._running = False  # 通知 CENC 轮询循环退出
         if self._service_task:
             self._service_task.cancel()
             try:
@@ -531,6 +628,25 @@ class MixDisasterWarningPlugin(Star):
             except asyncio.CancelledError:
                 pass
             self._snet_task = None
+        # 停止 CENC 轮询任务
+        for tname in ("_cenc_task",):
+            t = getattr(self, tname, None)
+            if t:
+                t.cancel()
+                try:
+                    await t
+                except asyncio.CancelledError:
+                    pass
+                setattr(self, tname, None)
+        # 停止 CEA-PR 各省轮询任务
+        ceapr_tasks = getattr(self, '_ceapr_tasks', {})
+        for app_id, t in list(ceapr_tasks.items()):
+            t.cancel()
+            try:
+                await t
+            except asyncio.CancelledError:
+                pass
+        self._ceapr_tasks = {}
         # 停止台风任务
         for tname in ("_typhoon_cma_task", "_typhoon_jma_task", "_typhoon_cleanup_task"):
             t = getattr(self, tname, None)
@@ -572,6 +688,8 @@ class MixDisasterWarningPlugin(Star):
             # SNET 专用轮询（不同于通用 HttpPoller，需要下载并合并 PNG 瓦片）
             if self._snet_task is None:
                 self._snet_task = asyncio.create_task(self._poll_snet())
+            # CENC 省网轮询（替代 FAN Studio）
+            await self._start_cenc_polling()
             while True:
                 await asyncio.sleep(3600)
         except asyncio.CancelledError:
@@ -792,13 +910,12 @@ class MixDisasterWarningPlugin(Star):
         except Exception:
             pass
 
-        # 日志：WS 消息摘要
-        extra = ""
+        # 日志：WS 消息摘要（二进制源由 pipeline 摘要日志覆盖，此处略）
         if isinstance(data_for_check, dict):
             extra = f" type={data_for_check.get('type','?')}"
             if "source" in data_for_check:
                 extra += f" source={data_for_check['source']}"
-        logger.info(f"[WS] ← {name}{extra}")
+            logger.info(f"[WS] ← {name}{extra}")
 
         # initial_all 永远处理（不受静默期限制），直接入库不走推送
         if isinstance(data_for_check, dict) and name == "fan_studio" and data_for_check.get("type") == "initial_all":
@@ -935,6 +1052,10 @@ class MixDisasterWarningPlugin(Star):
         elif msg_type in ("heartbeat", "ping", "pong"):
             pass  # 心跳静默
 
+        elif msg_type == "error":
+            err_msg = data.get("message", data.get("msg", str(data)[:200]))
+            logger.warning(f"[Fan] WebSocket 错误: {err_msg}")
+
         elif msg_type == "query_response":
             pass
 
@@ -984,6 +1105,14 @@ class MixDisasterWarningPlugin(Star):
 
     def _setup_ws_connections(self, sources: dict):
         """配置 WebSocket 连接（仅启用的组，直接从配置文件读取）。"""
+        # 清除已失效的 FAN Studio 连接（避免热重载残留重连）
+        if "fan_studio" in self.ws_manager._connections:
+            logger.info("[Mix] 清除已失效的 FAN Studio WS 连接")
+            old = self.ws_manager._connections.pop("fan_studio")
+            try:
+                asyncio.create_task(old.stop())
+            except Exception:
+                pass
         # 直接从文件读，避免 self.config 为空或格式问题
         ds_cfg = {}
         try:
@@ -1013,6 +1142,8 @@ class MixDisasterWarningPlugin(Star):
             handler = entry.get("connection_handler", "")
             if handler == "http_poll":
                 continue  # HTTP 轮询源不走 WS 连接
+            if handler == "fan_studio":
+                continue  # FAN Studio 服务器已失能（DDoS + IP封禁）
             if handler and url:
                 key = entry.get("connection_group", handler)
                 if key not in groups:
@@ -1059,10 +1190,17 @@ class MixDisasterWarningPlugin(Star):
                 seen.add(uid)
                 new_envs.append(env)
 
+        # 限制 seen 集大小防内存泄漏（旧 event_id 约7天后重推也无妨）
+        if len(seen) > 10000:
+            seen.clear()
+            logger.info(f"[HTTP] {source_id} seen集已清（防泄漏）")
+
         if not new_envs:
             return
 
         if is_first:
+            # 首次轮询：入库但不推送（防重启后旧事件刷屏）
+            # 后续轮询只推送新增的事件
             stored = 0
             if self.database:
                 for env in new_envs:
@@ -1071,8 +1209,9 @@ class MixDisasterWarningPlugin(Star):
                         stored += 1
                     except Exception:
                         pass
-            logger.info(f"[HTTP] << {source_id}: {len(new_envs)} 条入库{'（首条不推送）' if stored else '（无DB）'}")
+            logger.info(f"[HTTP] << {source_id}: {len(new_envs)} 条入库（首次静默，防重启暴发）")
         else:
+            # pipeline.handle 内部会自行入库，这里不再重复存
             pushed = 0
             for env in new_envs:
                 ev = env.event
@@ -1090,8 +1229,7 @@ class MixDisasterWarningPlugin(Star):
                         logger.error(f"[HTTP] {source_id} {env.identity.event_id} pipeline.handle 失败: {ex}")
                         import traceback
                         logger.error(traceback.format_exc())
-            if pushed:
-                logger.info(f"[HTTP] << {source_id}: {pushed}/{len(new_envs)} 条推送")
+            logger.info(f"[HTTP] << {source_id}: {pushed} 条推送")
 
         # NRCan md5 回退警告
         if source_id == "nrcan_http":
@@ -1169,6 +1307,280 @@ class MixDisasterWarningPlugin(Star):
                 raw_text=True, ssl=False,
             )
             logger.info("[ICL] 已加载 ICL 轮询器")
+
+    # ═══════════════════ CENC / CEA-PR 省网轮询（替代 FAN） ═══════════════════
+
+    async def _start_cenc_polling(self):
+        """启动 CENC 全国 EEW + CEA-PR 各省独立轮询。"""
+        self._cenc_eew_seen = set()
+        logger.info("[CENC] 启动 EEW 轮询: 全国源 2s")
+        if not hasattr(self, '_cenc_task') or not self._cenc_task:
+            self._cenc_task = asyncio.create_task(self._poll_cenc_national())
+        # CEA-PR 各省独立轮询（每省一条时间线）
+        logger.info(f"[CEA-PR] 启动各省轮询: {len(_CENC_PROVINCES)} 省")
+        self._ceapr_tasks: dict[str, asyncio.Task] = {}
+        for name, app_id in _CENC_PROVINCES:
+            task = asyncio.create_task(self._poll_ceapr_province(name, app_id))
+            self._ceapr_tasks[app_id] = task
+        # CEA-PR 融合去重状态
+        self._ceapr_fusion: dict[str, dict] = {}  # fingerprint → {province, ts}
+        self._ceapr_latest: dict[str, str] = {}    # app_id → fingerprint
+
+    async def _poll_cenc_national(self):
+        """全国汇总源 EEW 轮询 — 2 秒间隔。"""
+        url = f"{_CENC_BASE}/api/earthquake/event/v1/list"
+        headers = {"Content-Type": "application/json"}
+        payload = {
+            "app_id": _CENC_NATIONAL_APP_ID,
+            "page_query": {"page_no": 1, "page_size": 10},
+        }
+        session = None
+        while self._running:
+            try:
+                if session is None or session.closed:
+                    session = aiohttp.ClientSession(headers=headers)
+                async with session.post(url, json=payload, timeout=5) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        await self._handle_cenc_eew(data)
+            except asyncio.TimeoutError:
+                logger.debug("[CENC-N] 超时")
+            except aiohttp.ClientError as e:
+                logger.warning(f"[CENC-N] 请求失败: {e}")
+                if session and not session.closed:
+                    await session.close()
+                session = None
+            except Exception as e:
+                logger.warning(f"[CENC-N] 错误: {e}")
+            await asyncio.sleep(2 + (hashlib.md5(b"cenc_n").digest()[0] / 256.0) * 0.5)
+
+    async def _poll_cenc_national_once(self) -> bool:
+        """单次抓取全国 EEW（供查询命令按需调用）。"""
+        url = f"{_CENC_BASE}/api/earthquake/event/v1/list"
+        headers = {"Content-Type": "application/json"}
+        payload = {
+            "app_id": _CENC_NATIONAL_APP_ID,
+            "page_query": {"page_no": 1, "page_size": 10},
+        }
+        try:
+            async with aiohttp.ClientSession(headers=headers) as session:
+                async with session.post(url, json=payload, timeout=10) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        await self._handle_cenc_eew(data)
+                        return True
+        except Exception as e:
+            logger.warning(f"[CENC-N] 单次抓取失败: {e}")
+        return False
+
+    async def _handle_cenc_eew(self, raw_data: dict):
+        """处理 CENC EEW 结果：解析 → 去重（third_id）→ 入库 → 推送。"""
+        try:
+            from .parser.registry import ParserRegistry
+        except ImportError:
+            from parser.registry import ParserRegistry
+        parser = ParserRegistry.get("cenc_eew_http")
+        if parser is None:
+            return
+        result = parser.parse_message(raw_data)
+        if not result:
+            return
+        envelopes = result if isinstance(result, list) else [result]
+        if not envelopes:
+            return
+        if not hasattr(self, '_cenc_first_done'):
+            self._cenc_first_done = True
+            is_first = True
+        else:
+            is_first = False
+        if not hasattr(self, '_cenc_eew_seen'):
+            self._cenc_eew_seen = set()
+
+        new_envs = []
+        for env in envelopes:
+            third_id = (env.event.raw or {}).get("third_id", "") if hasattr(env.event, 'raw') else ""
+            if not third_id:
+                third_id = env.identity.event_id
+            # 含报次的 dedup key（同一事件不同报次分别推送）
+            dedup_key = f"{third_id}|{env.identity.report_num or 0}"
+            if dedup_key in self._cenc_eew_seen:
+                continue
+            self._cenc_eew_seen.add(dedup_key)
+            new_envs.append(env)
+
+        # 限制 seen 集大小防内存泄漏
+        if len(self._cenc_eew_seen) > 10000:
+            self._cenc_eew_seen.clear()
+            logger.info("[CENC-N] seen集已清（防泄漏）")
+
+        if not new_envs:
+            return
+
+        # 入库
+        stored = 0
+        if self.database:
+            for env in new_envs:
+                try:
+                    await self.database.insert_envelope(env)
+                    stored += 1
+                except Exception:
+                    pass
+        if is_first:
+            logger.info(f"[CENC-N] {stored}条入库（首次静默，防重启暴发）")
+        elif stored and self.pipeline:
+            logger.info(f"[CENC-N] {stored}条入库，推送中...")
+            for env in new_envs:
+                try:
+                    await self.pipeline.handle(env)
+                except Exception as e:
+                    logger.warning(f"[CENC-N] pipeline推送失败: {e}")
+
+    async def _poll_ceapr_province(self, name: str, app_id: str):
+        """单个省 CEA-PR 轮询（独立时间线，互不阻塞）。"""
+        url = f"{_CENC_BASE}/api/earthquake/event/v1/list"
+        headers = {"Content-Type": "application/json"}
+        # 错峰启动：基于 app_id hash 偏移 0-30s
+        offset = (hashlib.md5(app_id.encode()).digest()[0] / 256.0) * 30
+        await asyncio.sleep(offset)
+        session = None
+        while self._running:
+            try:
+                if session is None or session.closed:
+                    session = aiohttp.ClientSession(headers=headers)
+                # 注意：CEA-PR 不传 alarm_type → 各省 API 返回省专属数据
+                # 如果传 alarm_type=1 → 返回全国统一 EEW 数据，各省失去区分的意义
+                payload = {
+                    "app_id": app_id,
+                    "page_query": {"page_no": 1, "page_size": 10},
+                }
+                async with session.post(url, json=payload, timeout=10) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        await self._handle_ceapr(data, name, app_id)
+            except asyncio.TimeoutError:
+                pass
+            except aiohttp.ClientError as e:
+                logger.warning(f"[CEA-PR] {name} HTTP错误: {e}")
+                if session and not session.closed:
+                    await session.close()
+                session = None
+            except Exception as e:
+                logger.debug(f"[CEA-PR] {name} 错误: {e}")
+            # 按 tier 随机间隔（用 this_app_id 防止闭包变量问题）
+            _this_app_id = app_id
+            if _this_app_id in _CEAPR_LOW_FREQ:
+                await asyncio.sleep(__import__("random").uniform(10, 20))
+            else:
+                await asyncio.sleep(__import__("random").uniform(3, 6))
+
+    async def _handle_ceapr(self, raw_data: dict, name: str, app_id: str):
+        """处理 CEA-PR 单个省 EEW：融合去重 → 首见推送。
+
+        融合策略：
+        - 每省只跟踪最新事件的 fingerprint（mag+place+depth+lat+lon+time）
+        - fingerprint 对比 → 同一地震的后续省数据直接丢弃（不入库不推）
+        - 完全一致的 fingerprint 跨省也不推（同地震在另一省的 API 重复返回）
+        """
+        if not isinstance(raw_data, dict) or raw_data.get("code") != 0:
+            return
+        items = (raw_data.get("data") or {}).get("spot_infos")
+        if not isinstance(items, list) or not items:
+            return
+        item = items[0]
+        if not isinstance(item, dict):
+            return
+
+        # 提取基本字段
+        event_id = item.get("id", "")
+        magnitude = item.get("level")
+        place = item.get("location", "")
+        depth = item.get("depth")
+        lat = item.get("latitude")
+        lon = item.get("longitude")
+        ts = item.get("created_at", 0)
+
+        # fingerprint: 同地震各字段完全一致（含报次，每报独立）
+        # 注意：depth/lat/lon 可能是 None，不能直接 float()，用 "?" 占位
+        report_num = item.get("serial_number", 0) or 0
+        try:
+            mag_s = f"{float(magnitude):.1f}" if magnitude is not None else "?"
+            lat_s = f"{float(lat):.3f}" if lat is not None else "?"
+            lon_s = f"{float(lon):.3f}" if lon is not None else "?"
+            dep_s = str(depth) if depth is not None else "?"
+            fingerprint = f"{mag_s}|{place}|{dep_s}|{lat_s}|{lon_s}|{ts}|{report_num}"
+        except (TypeError, ValueError):
+            return
+
+        # 1) 检查是否该省已有这条最新事件（fingerprint 相同 = 无变化）
+        prev_fp = self._ceapr_latest.get(app_id)
+        if prev_fp == fingerprint:
+            return
+        self._ceapr_latest[app_id] = fingerprint
+
+        # 2) 跨省融合去重：首次见的 fingerprint → 推送，后续见的舍
+        if fingerprint in self._ceapr_fusion:
+            entry = self._ceapr_fusion[fingerprint]
+            if not entry.get("_logged"):
+                entry["_logged"] = True
+                logger.info(f"[CEA-PR] 融合跳过: M{magnitude} {place}（首发 {entry['province']}，后续省已去重）")
+            return
+        self._ceapr_fusion[fingerprint] = {"province": _CENC_SHORT_NAME.get(app_id, name), "ts": __import__("time").time(), "_logged": False}
+
+        # 3) TTL 清理（24h + 500 条上限）
+        now = __import__("time").time()
+        if len(self._ceapr_fusion) > 500:
+            expired = [k for k, v in self._ceapr_fusion.items() if now - v["ts"] > 86400]
+            for k in expired:
+                del self._ceapr_fusion[k]
+            # 如果清理完还是太多，清掉最旧的一半
+            if len(self._ceapr_fusion) > 500:
+                sorted_items = sorted(self._ceapr_fusion.items(), key=lambda x: x[1]["ts"])
+                for k, _ in sorted_items[:250]:
+                    del self._ceapr_fusion[k]
+
+        # 4) 用 CencEewProvinceParser 解析 → pipeline 推送
+        try:
+            from .parser.registry import ParserRegistry
+        except ImportError:
+            from parser.registry import ParserRegistry
+        parser = ParserRegistry.get("cenc_eew_province")
+        if parser is None:
+            return
+        result = parser.parse_message(raw_data)
+        if not result:
+            return
+        envelopes = result if isinstance(result, list) else [result]
+        if not envelopes:
+            return
+
+        # 在 event.raw 中注入省份名，供 presenters 拼标题用
+        province_short = _CENC_SHORT_NAME.get(app_id, name.replace("地震预警网", ""))
+        for env in envelopes:
+            if hasattr(env.event, "raw") and isinstance(env.event.raw, dict):
+                env.event.raw["_province_name"] = province_short
+
+        env = envelopes[0]
+        ev = env.event
+        mag_v = getattr(ev, "magnitude", None)
+        place_v = getattr(ev, "place_name", None) or place
+        occurred = getattr(ev, "occurred_at", None)
+        time_s = occurred.strftime("%H:%M:%S") if occurred else "?"
+        mag_s = f" M{mag_v:.1f}" if mag_v is not None else ""
+        logger.info(f"[CEA-PR] 新事件: {name} {time_s}{mag_s} {place_v}")
+
+        # 先入库（无论 pipeline 是否推，DB 必须有数据供查询）
+        if self.database:
+            try:
+                await self.database.insert_envelope(env)
+            except Exception as e:
+                logger.warning(f"[CEA-PR] {name} 入库失败: {e}")
+
+        # 再推送（pipeline 阈值可能拒绝，但不影响已入库的数据）
+        if self.pipeline:
+            try:
+                await self.pipeline.handle(env)
+            except Exception as e:
+                logger.warning(f"[CEA-PR] {name} pipeline 失败: {e}")
 
     # ═══════════════════ 数据查询 ═══════════════════
 
@@ -1946,35 +2358,7 @@ class MixDisasterWarningPlugin(Star):
                                     intensity_b64.append(base64.b64encode(f.read()).decode())
                     except Exception as ex:
                         logger.warning(f"[查询] {display} 烈度/震度图渲染异常: {ex}")
-        lat, lon = r.get("latitude"), r.get("longitude")
-        if lat is not None and lon is not None and self._map_builder:
-            try:
-                msg_cfg = self.config.get("message_format", {})
-                thumb_cfg = dict(msg_cfg)
-                thumb_cfg["map_zoom_level"] = 4
-                thumb_path = await self._map_builder.render_map_image(lat, lon, thumb_cfg)
-                detail_cfg = dict(msg_cfg)
-                detail_cfg["map_zoom_level"] = 8
-                detail_path = await self._map_builder.render_map_image(lat, lon, detail_cfg)
-
-                b64_list = []
-                for p in (thumb_path, detail_path):
-                    if p and os.path.exists(p):
-                        with open(p, "rb") as f:
-                            b64_list.append(base64.b64encode(f.read()).decode())
-                        try:
-                            os.unlink(p)
-                        except Exception:
-                            pass
-
-                if b64_list:
-                    all_imgs = [Image.fromBase64(b) for b in intensity_b64] + [Image.fromBase64(b) for b in b64_list]
-                    yield event.chain_result([Plain(text)] + all_imgs)
-                    return
-            except Exception as e:
-                logger.warning(f"[查询] {display} 地图渲染异常: {e}")
-
-        # 只有烈度/震度图（没有地图时）
+        # 震中图已禁用（FAN 瓦片代理失能），仅附烈度震度图
         if intensity_b64:
             yield event.chain_result([Plain(text)] + [Image.fromBase64(b) for b in intensity_b64])
             return
@@ -1983,11 +2367,337 @@ class MixDisasterWarningPlugin(Star):
 
     @filter.regex(r"^/cenc(?:\s|$)")
     async def q_cenc(self, e):
-        async for r in self._quick_query(e, "cenc_fanstudio", "中国地震台网"): yield r
+        """CENC 查询 — 暂用 CEA 数据，后续接入速报 API。"""
+        async for r in self._quick_query(e, "cenc_eew_http", "中国地震预警网"): yield r
 
     @filter.regex(r"^/cea(?:\s|$)")
-    async def q_cea(self, e):
-        async for r in self._quick_query(e, "cea_fanstudio", "中国地震预警网"): yield r
+    async def q_cea(self, event: AstrMessageEvent):
+        """CEA 查询：/cea = 全国溯源 /cea pr = 各省概览 /cea <省份> = 省详情"""
+        from datetime import datetime
+        from .message.presenters import present_eew, _format_coords
+        from .domain.models import EewEvent
+
+        raw = event.message_str if hasattr(event, 'message_str') else str(event.message_obj)
+        parts = raw.strip().split()
+        arg = parts[1].lower() if len(parts) >= 2 else ""
+
+        # ── /cea pr → 省概览，发聊天记录 ──
+        if arg == "pr":
+            from astrbot.api.message_components import Node, Nodes
+            headers = {"Content-Type": "application/json"}
+            ok_count = 0
+            bot_id = event.get_self_id() or "0"
+            bot_name = "夜幕百里"
+            nodes = Nodes([])
+            # DB 统计
+            db_count = 0
+            if self.database:
+                try:
+                    rows = await self.database.execute_raw(
+                        "SELECT COUNT(*) as c FROM events WHERE source='cenc_eew_province'"
+                    )
+                    db_count = rows[0]["c"] if rows else 0
+                except Exception:
+                    pass
+            now_str = datetime.now().strftime("%m-%d %H:%M")
+            header_text = (
+                f"CEA-PR 中国地震预警网 省级融合源 最新数据\n"
+                f"省份数量统计: {len(_CENC_PROVINCES)}\n"
+                f"数据库入库数据数量: {db_count}\n"
+                f"最新获取时间: {now_str}"
+            )
+            nodes.nodes.append(Node(uin=bot_id, name=bot_name, content=[Plain(header_text)]))
+            async with aiohttp.ClientSession(headers=headers) as session:
+                for name, app_id in _CENC_PROVINCES:
+                    short = _CENC_SHORT_NAME.get(app_id, name.replace("地震预警网", "").replace("省", ""))
+                    payload = {
+                        "app_id": app_id,
+                        "page_query": {"page_no": 1, "page_size": 1},
+                    }
+                    try:
+                        async with session.post(f"{_CENC_BASE}/api/earthquake/event/v1/list", json=payload, timeout=10) as resp:
+                            if resp.status != 200:
+                                nodes.nodes.append(Node(uin=bot_id, name=bot_name, content=[Plain(f"{short}地震预警网 HTTP{resp.status}")]))
+                                continue
+                            data = await resp.json()
+                            if data.get("code") != 0:
+                                nodes.nodes.append(Node(uin=bot_id, name=bot_name, content=[Plain(f"{short}地震预警网 {data.get('msg','?')}")]))
+                                continue
+                            infos = (data.get("data") or {}).get("spot_infos", [])
+                            if not infos:
+                                nodes.nodes.append(Node(uin=bot_id, name=bot_name, content=[Plain(f"{short}地震预警网 无数据")]))
+                                continue
+                            eq = infos[0]
+                            eid = eq.get("id", "?")
+                            raw_ts = eq.get("created_at", 0)
+                            if raw_ts:
+                                ts = datetime.fromtimestamp(raw_ts).strftime("%Y年%m月%d日 %H:%M:%S")
+                            else:
+                                ts = "?"
+                            mag = eq.get("level", "?")
+                            dep = eq.get("depth")
+                            dep_s = f"{dep}km" if dep is not None else "不明"
+                            loc = eq.get("location", "?")
+                            raw_lat = eq.get("latitude")
+                            raw_lon = eq.get("longitude")
+                            lat_s = f"{abs(raw_lat):.3f}{'N' if raw_lat >= 0 else 'S'}" if raw_lat is not None else "?"
+                            lon_s = f"{abs(raw_lon):.3f}{'E' if raw_lon >= 0 else 'W'}" if raw_lon is not None else "?"
+                            serial = eq.get("serial_number")
+                            serial_s = f"第{serial}报" if serial else ""
+                            epi = eq.get("epicenter_intensity")
+                            epi_s = f"{epi}" if epi is not None else "不明"
+                            node_text = (
+                                f"{short}地震预警网 地震预警-{serial_s}\n"
+                                f"时间: {ts}\n"
+                                f"震中: {loc}\n"
+                                f"经纬度: {lon_s} {lat_s}\n"
+                                f"震级: M{mag}\n"
+                                f"深度: {dep_s}\n"
+                                f"预估最大烈度: {epi_s}\n"
+                                f"事件ID: {eid}"
+                            )
+                    except Exception as ex:
+                        nodes.nodes.append(Node(uin=bot_id, name=bot_name, content=[Plain(f"{short}地震预警网 {str(ex)[:30]}")]))
+                        continue
+                    nodes.nodes.append(Node(uin=bot_id, name=bot_name, content=[Plain(node_text)]))
+                    ok_count += 1
+            nodes.nodes.append(Node(uin=bot_id, name=bot_name, content=[Plain(f"成功: {ok_count}/{len(_CENC_PROVINCES)}")]))
+            # 尝试发聊天记录，失败则降级为文本
+            try:
+                yield event.chain_result([nodes])
+            except Exception:
+                yield event.plain_result("\n".join(
+                    [header_text] +
+                    [n.content[0].text for n in nodes.nodes[1:] if n.content]
+                ))
+            return
+
+        # ── /cea <省份> → 查某省最新 ──
+        if arg:
+            async for r in self._query_cenc_province(event, arg):
+                yield r
+            return
+
+        # ── /cea → 查全国源最新 EEW（单条 + 双图，与 /cea <省份> 一致）──
+        rows = await self._query_source_eew("cenc_eew_http", 5)
+        if not rows:
+            logger.info("[查询] cenc_eew_http DB 无数据，触发即时抓取")
+            try:
+                await self._poll_cenc_national_once()
+            except Exception as ex:
+                logger.warning(f"[查询] cenc_eew_http 即时抓取失败: {ex}")
+            rows = await self._query_source_eew("cenc_eew_http", 5)
+        if not rows:
+            yield event.plain_result("📡 CEA 全国预警网暂无数据")
+            return
+        r = rows[0]
+        ts = r.get("time") or ""
+        occurred_at = None
+        if ts:
+            try:
+                occurred_at = datetime.fromisoformat(ts)
+            except (ValueError, TypeError):
+                try:
+                    occurred_at = datetime.strptime(ts[:19].replace("T", " "), "%Y-%m-%d %H:%M:%S")
+                except (ValueError, TypeError):
+                    pass
+        eew = EewEvent(
+            source_id="cenc_eew_http",
+            event_id=r.get("real_event_id", ""),
+            occurred_at=occurred_at,
+            latitude=r.get("latitude"),
+            longitude=r.get("longitude"),
+            depth=r.get("depth"),
+            magnitude=r.get("magnitude"),
+            place_name=r.get("place_name") or "",
+            report_num=r.get("report_num"),
+        )
+        text = present_eew(eew)
+        if self._intensity_img_renderer and eew.magnitude is not None:
+            try:
+                s_path, i_path = self._intensity_img_renderer.render_both(eew.magnitude, eew.depth)
+                b64_list = []
+                for p in (s_path, i_path):
+                    if p and os.path.exists(p):
+                        with open(p, "rb") as f:
+                            b64_list.append(base64.b64encode(f.read()).decode())
+                        try:
+                            os.unlink(p)
+                        except Exception:
+                            pass
+                if b64_list:
+                    yield event.chain_result([Plain(text)] + [Image.fromBase64(b) for b in b64_list])
+                    return
+            except Exception as ex:
+                logger.warning(f"[查询] CEA 烈度/震度图渲染异常: {ex}")
+        yield event.plain_result(text)
+
+    @filter.regex(r"^/\.eew(?:\s|$)")
+    async def q_eew(self, event: AstrMessageEvent):
+        """查询 CENC EEW 状态：/.eew cea 或 /.eew cea <省份名>"""
+        raw = event.message_str if hasattr(event, 'message_str') else str(event.message_obj)
+        parts = raw.strip().split()
+        # parts[0] = "/.eew" 或 "/.eew"
+        sub = parts[1].lower() if len(parts) >= 2 else ""
+        arg = parts[2] if len(parts) >= 3 else ""
+
+        if sub == "cea":
+            if arg:
+                # 查指定省
+                async for r in self._query_cenc_province(event, arg):
+                    yield r
+                return
+            # 查全国汇总 EEW
+            rows = await self._query_source_eew("cenc_eew_http", 5)
+            if not rows:
+                # DB 空时即时抓取
+                logger.info("[查询] cenc_eew_http DB 无数据，触发即时抓取")
+                try:
+                    await self._poll_cenc_national_once()
+                except Exception as ex:
+                    logger.warning(f"[查询] cenc_eew_http 即时抓取失败: {ex}")
+                rows = await self._query_source_eew("cenc_eew_http", 5)
+            if not rows:
+                yield event.plain_result("📡 CENC EEW 暂无数据")
+                return
+            # 复用 present_eew 格式化，保证与 FAN CEA 格式一致
+            from datetime import datetime
+            from .message.presenters import present_eew
+            from .domain.models import EewEvent
+            lines_parts = ["📡 CENC 省网 EEW 状态"]
+            for r in rows[:5]:
+                try:
+                    ts = r.get("time") or ""
+                    occurred_at = None
+                    if ts:
+                        try:
+                            occurred_at = datetime.fromisoformat(ts)
+                        except (ValueError, TypeError):
+                            try:
+                                occurred_at = datetime.strptime(ts[:19].replace("T", " "), "%Y-%m-%d %H:%M:%S")
+                            except (ValueError, TypeError):
+                                pass
+                    eew = EewEvent(
+                        source_id="cenc_eew_http",
+                        event_id=r.get("real_event_id", ""),
+                        occurred_at=occurred_at,
+                        latitude=r.get("latitude"),
+                        longitude=r.get("longitude"),
+                        depth=r.get("depth"),
+                        magnitude=r.get("magnitude"),
+                        place_name=r.get("place_name") or "",
+                    )
+                    lines_parts.append(present_eew(eew))
+                except Exception:
+                    continue
+            text = "\n".join(lines_parts)
+            # 附上最新一条的烈度震度图
+            if rows and self._intensity_img_renderer:
+                try:
+                    r0 = rows[0]
+                    mag = r0.get("magnitude")
+                    depth = r0.get("depth")
+                    if mag is not None:
+                        s_path, i_path = self._intensity_img_renderer.render_both(mag, depth)
+                        b64_list = []
+                        for p in (s_path, i_path):
+                            if p and os.path.exists(p):
+                                with open(p, "rb") as f:
+                                    b64_list.append(base64.b64encode(f.read()).decode())
+                                try:
+                                    os.unlink(p)
+                                except Exception:
+                                    pass
+                        if b64_list:
+                            yield event.chain_result([Plain(text)] + [Image.fromBase64(b) for b in b64_list])
+                            return
+                except Exception as ex:
+                    logger.warning(f"[查询] CENC EEW 烈度/震度图渲染异常: {ex}")
+            yield event.plain_result(text)
+        else:
+            yield event.plain_result("用法: /.eew cea [省份]")
+
+    async def _query_cenc_province(self, event: AstrMessageEvent, province_name: str):
+        """查询指定省的最新 CENC EEW。"""
+        # 尝试匹配省名
+        matched_app_id = None
+        matched_name = None
+        for name, app_id in _CENC_PROVINCES:
+            if province_name in name or province_name in _CENC_SHORT_NAME.get(app_id, ""):
+                matched_app_id = app_id
+                matched_name = _CENC_SHORT_NAME.get(app_id, name)
+                break
+
+        if not matched_app_id:
+            yield event.plain_result(f"❌ 未找到省份: {province_name}")
+            return
+
+        # 即时抓取
+        url = f"{_CENC_BASE}/api/earthquake/event/v1/list"
+        payload = {
+            "app_id": matched_app_id,
+            "page_query": {"page_no": 1, "page_size": 10},
+        }
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=payload, timeout=10) as resp:
+                    if resp.status != 200:
+                        yield event.plain_result(f"❌ {matched_name} HTTP {resp.status}")
+                        return
+                    data = await resp.json()
+        except Exception as ex:
+            yield event.plain_result(f"❌ {matched_name} 请求失败: {ex}")
+            return
+
+        # 解析 — 用 cenc_eew_province parser 以匹配正确的 source_id
+        try:
+            from .parser.registry import ParserRegistry
+        except ImportError:
+            from parser.registry import ParserRegistry
+        parser = ParserRegistry.get("cenc_eew_province")
+        result = parser.parse_message(data) if parser else None
+        if not result:
+            yield event.plain_result(f"📡 {matched_name} 暂无 EEW 数据")
+            return
+        envelopes = result if isinstance(result, list) else [result]
+        if not envelopes:
+            yield event.plain_result(f"📡 {matched_name} 暂无 EEW 数据")
+            return
+        env = envelopes[0]
+        ev = env.event
+        from .message.presenters import present_eew
+        text = present_eew(ev)
+        # 因 EewEvent frozen，不在 raw 中注入省份，改用文本替换标题
+        province_display = _CENC_SHORT_NAME.get(matched_app_id, matched_name)
+        if province_display:
+            import re as _re
+            lines = text.split("\n")
+            # [CEA-pr/中国地震预警网省级融合源 地震预警] → 插入 (省份)
+            lines[0] = _re.sub(
+                r"(中国地震预警网省级融合源)(\s)",
+                rf"\1({province_display})\2",
+                lines[0]
+            )
+            text = "\n".join(lines)
+        # 附加双图
+        if self._intensity_img_renderer and getattr(ev, 'magnitude', None) is not None:
+            try:
+                s_path, i_path = self._intensity_img_renderer.render_both(ev.magnitude, ev.depth)
+                b64_list = []
+                for p in (s_path, i_path):
+                    if p and os.path.exists(p):
+                        with open(p, "rb") as f:
+                            b64_list.append(base64.b64encode(f.read()).decode())
+                        try:
+                            os.unlink(p)
+                        except Exception:
+                            pass
+                if b64_list:
+                    yield event.chain_result([Plain(text)] + [Image.fromBase64(b) for b in b64_list])
+                    return
+            except Exception as ex:
+                logger.warning(f"[查询] {matched_name} 双图渲染异常: {ex}")
+        yield event.plain_result(text)
 
     @filter.regex(r"^/jma(?:\s|$)")
     async def q_jma(self, e):
@@ -2471,17 +3181,19 @@ class MixDisasterWarningPlugin(Star):
         }
 
         # 哪些源有成功返回数据
-        last_events = self._http_last_event  # {source_id: {event_id: ...}}
+        # 注: _http_last_event 的 key 格式为 "{source_id}:seen"，值为 set
+        last_events = self._http_last_event
         for name, info in pollers.items():
             display = display_map.get(name, name)
             running = info["running"]
             interval = info["interval"]
-            has_data = "✅" if name in last_events else "⏳"
+            seen_key = f"{name}:seen"
+            seen_set = last_events.get(seen_key)
+            has_data = "✅" if (seen_set and len(seen_set) > 0) else "⏳"
             status = "🟢 运行中" if running else "🔴 已停止"
             lines.append(f"  {has_data} {display} {status} ({interval}s)")
-            if name in last_events:
-                last_eid = last_events[name].get("event_id", "?")
-                lines.append(f"     最后事件: {last_eid}")
+            if seen_set:
+                lines.append(f"     已见 {len(seen_set)} 个事件")
 
         # WS → HTTP 备用关系提示
         lines.append("")
@@ -2685,16 +3397,45 @@ class MixDisasterWarningPlugin(Star):
                         os.unlink(out)
                     except Exception:
                         pass
-                    yield e.chain_result([
-                        Image.fromBase64(b64),
-                        Plain(f"{sender_name} 正在发布地震预警！M9.0!滚木！"),
-                    ])
+                    # 生成全部 EEW 机构预警文本
+                    eew_lines = [
+                        f"⚠️ {sender_name} 你受到了南笙的上古无敌雷霆万钧霹雳闪电狂风暴风"
+                        f"裂空碎星灭世焚天裂地破军万雷天罚龙卷海啸火山陨石混沌太虚无极"
+                        f"至尊霸天逆天封神绝世无双苍穹星辰日月乾坤霸气牛逼潇洒帅气"
+                        f"上古超强无敌制霸飒爽爆炸祝福！地球正在为你颤抖！"
+                    ]
+                    for ik, meta in _EEW_INSTITUTIONS.items():
+                        dn = meta.get("display_name", ik)
+                        eew_lines.append(f"{dn} 现正发布地震预警！M9.0！")
+                    eew_text = "\n".join(eew_lines)
+
+                    # 加载祝福图片
+                    blessing_path = os.path.join(
+                        os.path.dirname(__file__),
+                        "resources", "images", "nanshen_blessing.png",
+                    )
+                    chain = [Plain(eew_text), Image.fromBase64(b64)]
+                    if os.path.exists(blessing_path):
+                        with open(blessing_path, "rb") as f:
+                            chain.append(Image.fromBase64(base64.b64encode(f.read()).decode()))
+                    chain.append(Plain("（仅供娱乐）"))
+
+                    yield e.chain_result(chain)
                     return
             except Exception as ex:
                 logger.warning(f"[nan shen] 渲染异常: {ex}")
 
         # 渲染失败时纯文本兜底
-        yield e.plain_result(f"{sender_name} 正在发布地震预警！M9.0!滚木！")
+        eew_lines = [
+            f"⚠️ {sender_name} 你受到了南笙的上古无敌雷霆万钧霹雳闪电狂风暴风"
+            f"裂空碎星灭世焚天裂地破军万雷天罚龙卷海啸火山陨石混沌太虚无极"
+            f"至尊霸天逆天封神绝世无双苍穹星辰日月乾坤霸气牛逼潇洒帅气"
+            f"上古超强无敌制霸飒爽爆炸祝福！地球正在为你颤抖！"
+        ]
+        for ik, meta in _EEW_INSTITUTIONS.items():
+            dn = meta.get("display_name", ik)
+            eew_lines.append(f"{dn} 现正发布地震预警！M9.0！")
+        yield e.plain_result("\n".join(eew_lines) + "\n（仅供娱乐）")
 
     # ── BAK 版迁移的缺失快捷指令 ──
 

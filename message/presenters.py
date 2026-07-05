@@ -60,7 +60,7 @@ def _estimate_csis(mag: float, depth_km: float) -> float:
         0.2 * (line_dis - 10.0),
         0.0
     )
-    cea1 = 1.297 * mag - 4.368 * math.log10(0.0 + 15.0) + 5.363
+    cea1 = 1.297 * mag - 4.368 * math.log10(line_dis + 15.0) + 5.363
     cea2 = 1.297 * mag - 4.368 * math.log10(hypo_dis + 15.0) + 5.363
     return (cea1 + cea2) / 2.0
 
@@ -153,6 +153,8 @@ _EVENT_LABELS: dict[str, str] = {
     "cq_wolfx_http": "地震预警",
     "global_quake": "地震预警",
     "icl_http": "地震预警",
+    "cenc_eew_http": "地震预警",
+    "cenc_eew_province": "地震预警",
     # 地震报告源 — JMA 用 raw issue.type 动态标题，此处仅作兜底
     "jma_p2p_info": "地震情報",
     "jma_p2p_info_http": "地震情報",
@@ -215,6 +217,8 @@ _SOURCE_NAMES: dict[str, str] = {
     "ningxia_fanstudio": "NX", "shanxi_fanstudio": "SX", "yunnan_fanstudio": "YN",
     "china_tsunami_fanstudio": "海啸预警",
     "snet": "S-net",
+    "cenc_eew_http": "CEA",
+    "cenc_eew_province": "CEA-pr",
     "cma_typhoon": "CMA", "jma_typhoon": "JMA",
 }
 
@@ -255,7 +259,7 @@ def _make_title(text: str) -> str:
 def _format_coords(lat: float | None, lon: float | None) -> str:
     if lat is None or lon is None:
         return ""
-    return f"{abs(lon):.2f}{'E' if lon >= 0 else 'W'} {abs(lat):.2f}{'N' if lat >= 0 else 'S'}"
+    return f"{abs(lon):.3f}{'E' if lon >= 0 else 'W'} {abs(lat):.3f}{'N' if lat >= 0 else 'S'}"
 
 
 def _group_intensity_points(points: list[dict]) -> list[tuple[float, dict[str, list[str]]]]:
@@ -296,10 +300,18 @@ def present_eew(event: EewEvent) -> str:
     """格式化 EEW 预警消息。"""
     is_jma = event.source_id.startswith("jma_")
     is_cwa = event.source_id.startswith("cwa_")
-    # CEA 省级融合源：追加省份名
+    # CEA-PR 省级融合源：追加省份名
     name_suffix = ""
-    if event.source_id == "cea_pr_fanstudio" and getattr(event, "province", None):
-        name_suffix = f"({event.province})"
+    if event.source_id in ("cea_pr_fanstudio", "cenc_eew_province"):
+        # 优先级: _province_name(手动注入) > event.province(third_id) > raw.province
+        raw = getattr(event, "raw", {}) or {}
+        prov = str(raw.get("_province_name", "")) if isinstance(raw, dict) else ""
+        if not prov:
+            prov = getattr(event, "province", None) or ""
+        if not prov and isinstance(raw, dict):
+            prov = str(raw.get("province", ""))
+        if prov:
+            name_suffix = f"({prov})"
 
     # ── JMA：警報/予報 区分 ──
     if is_jma:
@@ -658,8 +670,8 @@ def present_snet(event: EarthquakeReport) -> str:
         try:
             from datetime import datetime, timezone, timedelta
             dt = datetime.strptime(str(timestamp), "%Y%m%d%H%M00").replace(tzinfo=timezone.utc)
-            dt_cst = dt + timedelta(hours=8)
-            display_time = dt_cst.strftime("%Y-%m-%d %H:%M:%S") + "(UTC+8)"
+            dt_jst = dt + timedelta(hours=9)
+            display_time = dt_jst.strftime("%Y-%m-%d %H:%M:%S") + "(UTC+9)"
         except (ValueError, TypeError):
             pass
 
@@ -850,28 +862,34 @@ def present_p2p_eew_alert(event: EewEvent) -> str:
 
 
 def present(envelope: EventEnvelope) -> str:
-    """自动选择展示格式。"""
+    """自动选择展示格式。
+
+    注意：用 type().__name__ 代替 isinstance 判断，
+    避免热重载后类定义不一致导致判断失败。
+    """
     event = envelope.event
-    if isinstance(event, EewEvent):
+    type_name = type(event).__name__
+
+    if type_name == 'EewEvent':
         # P2P 556 专用格式（气象厅警报）
         if event.source_id in ("jma_p2p_http", "jma_p2p"):
             return present_p2p_eew_alert(event)
         return present_eew(event)
-    if isinstance(event, EarthquakeReport):
+    if type_name == 'EarthquakeReport':
         # SNET 专用格式
         if event.source_id in ("snet_http", "snet") and isinstance(event.raw, dict) and event.raw.get("stations"):
             return present_snet(event)
         return present_earthquake_report(event)
-    if isinstance(event, TsunamiEvent):
+    if type_name == 'TsunamiEvent':
         return present_tsunami(event)
-    if isinstance(event, WeatherEvent):
+    if type_name == 'WeatherEvent':
         return present_weather(event)
-    if isinstance(event, TyphoonEvent):
+    if type_name == 'TyphoonEvent':
         push_type = envelope.metadata.get("push_type", "") if envelope.metadata else ""
         if push_type:
             return present_typhoon_push(event, push_type, envelope.metadata)
         return present_typhoon(event)
-    return f"[未识别的消息类型] source={envelope.source_id}"
+    return f"[未识别的消息类型] source={envelope.source_id} (type={type_name})"
 
 
 __all__ = [

@@ -36,6 +36,8 @@ class DatabaseManager:
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
             self.conn = await aiosqlite.connect(str(self.db_path), timeout=30)
             self.conn.row_factory = aiosqlite.Row
+            await self.conn.execute("PRAGMA journal_mode=WAL")
+            await self.conn.execute("PRAGMA busy_timeout=5000")
             await self._ensure_schema()
             logger.info(f"[DB] 初始化完成: {self.db_path}")
         except Exception as e:
@@ -225,6 +227,34 @@ class DatabaseManager:
             "raw": getattr(ev, "raw", {}),
         })
 
+    async def insert_envelopes_batch(self, envelopes: list) -> int:
+        """批量插入多个 Envelope，用一个事务提交。
+
+        解决大量并发写入时 'database is locked' 问题。
+        每批最多 200 条，超出的分多次事务提交。
+        """
+        if not self.conn or not envelopes:
+            return 0
+        total = 0
+        for i in range(0, len(envelopes), 200):
+            batch = envelopes[i:i + 200]
+            try:
+                await self.conn.execute("BEGIN")
+                for env in batch:
+                    try:
+                        await self.insert_envelope(env)
+                        total += 1
+                    except Exception:
+                        pass
+                await self.conn.commit()
+            except Exception as e:
+                try:
+                    await self.conn.rollback()
+                except Exception:
+                    pass
+                logger.error(f"[DB] 批量入库失败（{len(batch)} 条）: {e}")
+        return total
+
     async def query_events(
         self,
         source_id: str | None = None,
@@ -301,7 +331,7 @@ class DatabaseManager:
                        time, depth, report_num, description, raw_json
                 FROM events
                 WHERE source=? AND type IN ('earthquake_warning', 'eew')
-                ORDER BY id DESC LIMIT ?
+                ORDER BY time DESC LIMIT ?
             """, (source_id, limit))
             return [dict(r) for r in await cursor.fetchall()]
         except Exception as e:
