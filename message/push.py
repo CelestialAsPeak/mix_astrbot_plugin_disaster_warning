@@ -75,30 +75,56 @@ class PushExecutionService:
         self.big_alert_service = BigEarthquakeAlertService(config)
 
     async def _render_event_map(self, envelope: EventEnvelope) -> list[str] | None:
-        """渲染震中方位图（双图：缩略图 + 细节图）。"""
-        ev = envelope.event
-        lat = getattr(ev, "latitude", None)
-        lon = getattr(ev, "longitude", None)
-        if lat is None or lon is None:
-            return None
+        """渲染震中地图（缩略图 + 细节图），返回 base64 列表。"""
         if not self.map_builder:
             return None
-        try:
-            config = dict(self.config)
-            # 缩略图 zoom4
-            zoom = config.get("map_zoom_level", 4)
-            thumb = await self.map_builder.render_map_image(lat, lon, {**config, "map_zoom_level": max(zoom - 2, 2)})
-            # 细节图 zoom8
-            detail = await self.map_builder.render_map_image(lat, lon, {**config, "map_zoom_level": zoom + 2})
-            result = []
-            if thumb:
-                result.append(thumb)
-            if detail:
-                result.append(detail)
-            return result if result else None
-        except Exception as e:
-            logger.warning(f"[Map] 渲染震中方位图失败: {e}")
+
+        event = envelope.event
+        include_map = self.config.get("message_format", {}).get("include_map", True)
+        if not include_map:
             return None
+        if not isinstance(event, (EewEvent, EarthquakeReport)):
+            return None
+
+        lat, lon = event.latitude, event.longitude
+        if lat is None or lon is None:
+            return None
+        if not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
+            return None
+
+        b64_list = []
+
+        try:
+            # 缩略图（zoom 4）
+            thumb_cfg = dict(self.config.get("message_format", {}))
+            thumb_cfg["map_zoom_level"] = 4
+            thumb_path = await self.map_builder.render_map_image(lat, lon, thumb_cfg)
+            if thumb_path and os.path.exists(thumb_path):
+                with open(thumb_path, "rb") as f:
+                    b64_list.append(base64.b64encode(f.read()).decode())
+                try:
+                    os.unlink(thumb_path)
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.error(f"[Push] 缩略图渲染失败: {e}")
+
+        try:
+            # 细节图（zoom 6）
+            detail_cfg = dict(self.config.get("message_format", {}))
+            detail_cfg["map_zoom_level"] = 8
+            detail_path = await self.map_builder.render_map_image(lat, lon, detail_cfg)
+            if detail_path and os.path.exists(detail_path):
+                with open(detail_path, "rb") as f:
+                    b64_list.append(base64.b64encode(f.read()).decode())
+                try:
+                    os.unlink(detail_path)
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.error(f"[Push] 细节图渲染失败: {e}")
+
+        return b64_list if b64_list else None
 
     async def _render_snet_map(self, envelope: EventEnvelope) -> list[str] | None:
         """渲染 S-Net 测站分布图，返回 base64 列表。"""
@@ -368,11 +394,6 @@ class PushExecutionService:
             if not text:
                 return False
 
-            # 安全阀：禁止将"未识别的消息类型"发到群里
-            if "[未识别的消息类型]" in text:
-                logger.error(f"[Push] 拦截未识别消息推送: source={envelope.source_id} type={type(envelope.event).__name__}")
-                return False
-
             sessions = target_sessions or self.config.get("target_sessions", [])
             if not sessions:
                 return False
@@ -380,10 +401,9 @@ class PushExecutionService:
             # 构建消息链（文本 + 地图图片）
             chain_components = [Plain(text)]
 
-            # ── 图片选择（用 type.__name__ 避热重载 isinstance 失效） ──
-            ev_type = type(envelope.event).__name__
-            is_eew = ev_type == 'EewEvent'
-            is_snet = envelope.source_id in ("snet_http", "snet") and ev_type == 'EarthquakeReport'
+            # ── 图片选择 ──
+            is_eew = isinstance(envelope.event, EewEvent)
+            is_snet = envelope.source_id in ("snet_http", "snet") and isinstance(envelope.event, EarthquakeReport)
             is_gq = envelope.source_id == "global_quake" and is_eew
 
             # 本地辅助：将图片路径附加到消息链
@@ -433,7 +453,7 @@ class PushExecutionService:
                     if envelope.source_id in ("jma_p2p", "jma_p2p_http"):
                         _img(self._jma_eew_banner)
 
-                elif type(envelope.event).__name__ == 'EarthquakeReport' and self.intensity_img_renderer:
+                elif isinstance(envelope.event, EarthquakeReport) and self.intensity_img_renderer:
                     ev = envelope.event
                     # ── JMA / CWA 报告源：用实际震度渲染图片（不用 CSIS 估算）──
                     if ev.source_id in ("jma_p2p_info", "jma_p2p_info_http"):

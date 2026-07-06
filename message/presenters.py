@@ -60,7 +60,7 @@ def _estimate_csis(mag: float, depth_km: float) -> float:
         0.2 * (line_dis - 10.0),
         0.0
     )
-    cea1 = 1.297 * mag - 4.368 * math.log10(line_dis + 15.0) + 5.363
+    cea1 = 1.297 * mag - 4.368 * math.log10(0.0 + 15.0) + 5.363
     cea2 = 1.297 * mag - 4.368 * math.log10(hypo_dis + 15.0) + 5.363
     return (cea1 + cea2) / 2.0
 
@@ -147,14 +147,12 @@ _EVENT_LABELS: dict[str, str] = {
     "fj_wolfx_eew": "地震预警",
     "cq_wolfx_eew": "地震预警",
     "cwa_wolfx_http": "強震即時警報",
+    "kma_wolfx_http": "地震预警",
     "sc_wolfx_http": "地震预警",
-    # cenc_wolfx_info_http 标签由 type 字段动态决定（自动测定/正式测定）
     "fj_wolfx_http": "地震预警",
     "cq_wolfx_http": "地震预警",
     "global_quake": "地震预警",
     "icl_http": "地震预警",
-    "cenc_eew_http": "地震预警",
-    "cenc_eew_province": "地震预警",
     # 地震报告源 — JMA 用 raw issue.type 动态标题，此处仅作兜底
     "jma_p2p_info": "地震情報",
     "jma_p2p_info_http": "地震情報",
@@ -211,15 +209,12 @@ _SOURCE_NAMES: dict[str, str] = {
     "jma_p2p_http": "JMA", "jma_p2p_info_http": "JMA",
     "jma_tsunami_p2p_http": "JMA",
     "sc_wolfx_eew": "SC", "fj_wolfx_eew": "FJ", "cq_wolfx_eew": "CQ",
-    "cwa_wolfx_http": "CWA",
-    "cenc_wolfx_info_http": "CENC",
+    "cwa_wolfx_http": "CWA", "kma_wolfx_http": "KMA",
     "sc_wolfx_http": "SC", "fj_wolfx_http": "FJ", "cq_wolfx_http": "CQ",
     "beijing_fanstudio": "BJ", "guangxi_fanstudio": "GX",
     "ningxia_fanstudio": "NX", "shanxi_fanstudio": "SX", "yunnan_fanstudio": "YN",
     "china_tsunami_fanstudio": "海啸预警",
     "snet": "S-net",
-    "cenc_eew_http": "CEA",
-    "cenc_eew_province": "CEA-pr",
     "cma_typhoon": "CMA", "jma_typhoon": "JMA",
 }
 
@@ -260,7 +255,7 @@ def _make_title(text: str) -> str:
 def _format_coords(lat: float | None, lon: float | None) -> str:
     if lat is None or lon is None:
         return ""
-    return f"{abs(lon):.3f}{'E' if lon >= 0 else 'W'} {abs(lat):.3f}{'N' if lat >= 0 else 'S'}"
+    return f"{abs(lon):.2f}{'E' if lon >= 0 else 'W'} {abs(lat):.2f}{'N' if lat >= 0 else 'S'}"
 
 
 def _group_intensity_points(points: list[dict]) -> list[tuple[float, dict[str, list[str]]]]:
@@ -301,18 +296,10 @@ def present_eew(event: EewEvent) -> str:
     """格式化 EEW 预警消息。"""
     is_jma = event.source_id.startswith("jma_")
     is_cwa = event.source_id.startswith("cwa_")
-    # CEA-PR 省级融合源：追加省份名
+    # CEA 省级融合源：追加省份名
     name_suffix = ""
-    if event.source_id in ("cea_pr_fanstudio", "cenc_eew_province"):
-        # 优先级: _province_name(手动注入) > event.province(third_id) > raw.province
-        raw = getattr(event, "raw", {}) or {}
-        prov = str(raw.get("_province_name", "")) if isinstance(raw, dict) else ""
-        if not prov:
-            prov = getattr(event, "province", None) or ""
-        if not prov and isinstance(raw, dict):
-            prov = str(raw.get("province", ""))
-        if prov:
-            name_suffix = f"({prov})"
+    if event.source_id == "cea_pr_fanstudio" and getattr(event, "province", None):
+        name_suffix = f"({event.province})"
 
     # ── JMA：警報/予報 区分 ──
     if is_jma:
@@ -350,23 +337,16 @@ def present_eew(event: EewEvent) -> str:
         if report_parts:
             lines.append(_field("報次", "".join(report_parts)))
 
-    raw = event.raw if isinstance(event.raw, dict) else {}
-    is_assumption = raw.get("isAssumption", False) or raw.get("is_assumption", False)
-
     if event.place_name:
         lines.append(_field("震中", event.place_name))
-
     if event.magnitude is not None:
         lines.append(_field("震级", f"M{event.magnitude:.1f}"))
     if event.depth is not None:
-        depth_str = "不明" if is_assumption else f"{event.depth:.0f} km"
-        lines.append(_field("深度", depth_str))
+        lines.append(_field("深度", f"{event.depth:.0f} km"))
     if event.occurred_at:
         lines.append(_field("发震时间", _fmt_time_with_tz(event.occurred_at, event.source_id)))
     coords = _format_coords(event.latitude, event.longitude)
-    if is_assumption:
-        lines.append(_field("经纬度", "（推定震源 PLUM法）"))
-    elif coords:
+    if coords:
         lines.append(_field("经纬度", coords))
     if event.max_intensity:
         intensity_label = "最大震度" if (is_jma or is_cwa) else "最大烈度"
@@ -380,48 +360,6 @@ def present_eew(event: EewEvent) -> str:
         else:
             lines.append(_field("预估最大烈度", "不明"))
             lines.append(_field("预估最大震度", "不明"))
-    # ── Wolfx JMA EEW 强震区域 ──
-    if is_jma and not event.is_cancel:
-        raw = event.raw if isinstance(event.raw, dict) else {}
-        warn_areas = raw.get("WarnArea") or event.warn_areas
-        if isinstance(warn_areas, list) and warn_areas:
-            # 按震度分组合并：{震度: [地区名列表]}
-            shindo_groups: dict[str, list[str]] = {}
-            for area in warn_areas:
-                if not isinstance(area, dict):
-                    continue
-                chiiki = str(area.get("Chiiki", area.get("AreaName", "")) or "")
-                if not chiiki:
-                    continue
-                shindo = str(area.get("Shindo1", area.get("Shindo", "")) or "")
-                if not shindo:
-                    continue
-                arrive = area.get("Arrive", "")
-                time_str = str(area.get("Time", "") or "")
-                # 已到達 或 Time 为 ////// 标记
-                is_arrived = (
-                    (isinstance(arrive, bool) and arrive) or
-                    (isinstance(arrive, str) and arrive.lower() == "true") or
-                    time_str in ("//////", "/////")
-                )
-                suffix = "已到達" if is_arrived else ""
-                if suffix:
-                    entry = f"{chiiki}[{suffix}]"
-                elif time_str and len(time_str) >= 8:
-                    entry = f"{chiiki}[{time_str[-8:]}到達]"
-                else:
-                    entry = chiiki
-                shindo_groups.setdefault(shindo, []).append(entry)
-
-            if shindo_groups:
-                # 按震度数字排序（大→小）
-                sorted_shindos = sorted(shindo_groups.keys(), reverse=True)
-                area_lines = ["强震区域："]
-                for sk in sorted_shindos:
-                    names = "、".join(shindo_groups[sk])
-                    area_lines.append(f"震度{sk}：{names}")
-                lines.extend(area_lines)
-
     # GQ 特有数据
     raw = event.raw if isinstance(event.raw, dict) else {}
     su = raw.get("stations_used")
@@ -475,10 +413,6 @@ def present_earthquake_report(event: EarthquakeReport) -> str:
         elif event.source_id == "cenc_fanstudio":
             info_type = str(event.raw.get("infoTypeName", event.raw.get("info_type", "")) or "")
             base_label = info_type if info_type in ("自动测定", "正式测定") else "地震报告"
-        # Wolfx CENC eqlist: type = "automatic" | "reviewed"
-        elif event.source_id == "cenc_wolfx_info_http":
-            _t = str(event.raw.get("type", "") or "")
-            base_label = {"automatic": "自动测定", "reviewed": "正式测定"}.get(_t, "地震测定")
         else:
             base_label = "地震报告"
 
@@ -724,8 +658,8 @@ def present_snet(event: EarthquakeReport) -> str:
         try:
             from datetime import datetime, timezone, timedelta
             dt = datetime.strptime(str(timestamp), "%Y%m%d%H%M00").replace(tzinfo=timezone.utc)
-            dt_jst = dt + timedelta(hours=9)
-            display_time = dt_jst.strftime("%Y-%m-%d %H:%M:%S") + "(UTC+9)"
+            dt_cst = dt + timedelta(hours=8)
+            display_time = dt_cst.strftime("%Y-%m-%d %H:%M:%S") + "(UTC+8)"
         except (ValueError, TypeError):
             pass
 
@@ -916,34 +850,28 @@ def present_p2p_eew_alert(event: EewEvent) -> str:
 
 
 def present(envelope: EventEnvelope) -> str:
-    """自动选择展示格式。
-
-    注意：用 type().__name__ 代替 isinstance 判断，
-    避免热重载后类定义不一致导致判断失败。
-    """
+    """自动选择展示格式。"""
     event = envelope.event
-    type_name = type(event).__name__
-
-    if type_name == 'EewEvent':
+    if isinstance(event, EewEvent):
         # P2P 556 专用格式（气象厅警报）
         if event.source_id in ("jma_p2p_http", "jma_p2p"):
             return present_p2p_eew_alert(event)
         return present_eew(event)
-    if type_name == 'EarthquakeReport':
+    if isinstance(event, EarthquakeReport):
         # SNET 专用格式
         if event.source_id in ("snet_http", "snet") and isinstance(event.raw, dict) and event.raw.get("stations"):
             return present_snet(event)
         return present_earthquake_report(event)
-    if type_name == 'TsunamiEvent':
+    if isinstance(event, TsunamiEvent):
         return present_tsunami(event)
-    if type_name == 'WeatherEvent':
+    if isinstance(event, WeatherEvent):
         return present_weather(event)
-    if type_name == 'TyphoonEvent':
+    if isinstance(event, TyphoonEvent):
         push_type = envelope.metadata.get("push_type", "") if envelope.metadata else ""
         if push_type:
             return present_typhoon_push(event, push_type, envelope.metadata)
         return present_typhoon(event)
-    return f"[未识别的消息类型] source={envelope.source_id} (type={type_name})"
+    return f"[未识别的消息类型] source={envelope.source_id}"
 
 
 __all__ = [

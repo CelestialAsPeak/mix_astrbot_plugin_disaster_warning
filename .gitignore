@@ -31,5 +31,7 @@ temp/
 *.jpg
 test_*.py
 cache/
-*.bak
-icl_parser.py
+
+# Project files
+CLAUDE.md
+MEMORY.md

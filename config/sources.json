@@ -50,6 +50,7 @@
     "institution_key": "cea",
     "institution_display_name": "CEA 中国地震预警网 EEW",
     "institution_active_name": "中国地震预警网",
+    "institution_active_name": "中国地震预警网",
     "query_group": "eew",
     "dispatch_family": "fan_studio_eew",
     "provider_source_names": [
@@ -170,11 +171,16 @@
     "query_group": "earthquake",
     "dispatch_family": "fan_studio_report",
     "provider_source_names": [
-      "cwa-weak"
+      "cwa-weak",
+      "cwa"
     ],
     "payload_signatures": [
       [
         "eventId",
+        "magnitude"
+      ],
+      [
+        "id",
         "magnitude"
       ]
     ]
@@ -234,8 +240,13 @@
       [
         "id",
         "magnitude",
-        "placeName"
+        "placeName",
+        "url"
       ]
+    ],
+    "payload_exclusions": [
+      ["maxIntensity"],
+      ["reportIntensity"]
     ]
   },
   "emsc_fanstudio": {
@@ -263,7 +274,8 @@
       [
         "id",
         "magnitude",
-        "placeName"
+        "placeName",
+        "url"
       ]
     ]
   },
@@ -723,8 +735,7 @@
     ],
     "provider_message_types": [
       "jma_eew"
-    ],
-    "code_override": "JMA-W(w)"
+    ]
   },
   "cenc_wolfx": {
     "source_id": "cenc_wolfx",
@@ -735,7 +746,7 @@
     "config_group": "wolfx",
     "config_key": "cenc_earthquake_warning",
     "priority": 0,
-    "display_name": "中国地震预警网(CEA)",
+    "display_name": "中国地震预警网(Wolfx)",
     "default_timezone": "Asia/Shanghai",
     "connection_handler": "wolfx",
     "connection_url": "wss://ws-api.wolfx.jp/all_eew",
@@ -753,8 +764,7 @@
     ],
     "provider_message_types": [
       "cenc_eew"
-    ],
-    "code_override": "CEA-W(w)"
+    ]
   },
   "cwa_wolfx": {
     "source_id": "cwa_wolfx",
@@ -778,8 +788,7 @@
     ],
     "provider_message_types": [
       "cwa_eew"
-    ],
-    "code_override": "CWA-W(w)"
+    ]
   },
   "jma_wolfx_info": {
     "source_id": "jma_wolfx_info",
@@ -806,8 +815,7 @@
     "provider_message_types": [
       "jma_report",
       "jma_info"
-    ],
-    "code_override": "JMA-W(w)"
+    ]
   },
   "jma_wolfx_http": {
     "source_id": "jma_wolfx_http",
@@ -818,7 +826,7 @@
     "config_group": "wolfx",
     "config_key": "jma_earthquake_warning",
     "priority": 0,
-    "display_name": "日本气象厅(JMA)",
+    "display_name": "日本气象厅(Wolfx HTTP)",
     "default_timezone": "Asia/Tokyo",
     "connection_handler": "http_poll",
     "connection_url": "https://api.wolfx.jp/jma_eew.json",
@@ -833,8 +841,7 @@
     ],
     "metadata": {
       "poll_interval": "30"
-    },
-    "code_override": "JMA-W(h)"
+    }
   },
   "cwa_wolfx_http": {
     "source_id": "cwa_wolfx_http",
@@ -845,13 +852,28 @@
     "config_group": "wolfx",
     "config_key": "taiwan_cwa_eew",
     "priority": 0,
-    "display_name": "台湾气象署(CWA)",
+    "display_name": "台湾气象署(Wolfx HTTP)",
     "default_timezone": "Asia/Taipei",
     "institution_key": "cwa",
     "institution_display_name": "CWA 台湾气象署 強震即時警報",
     "query_group": "eew",
-    "dispatch_family": "wolfx_eew",
-    "code_override": "CWA-W(h)"
+    "dispatch_family": "wolfx_eew"
+  },
+  "kma_wolfx_http": {
+    "source_id": "kma_wolfx_http",
+    "source_type": "earthquake_warning",
+    "provider_family": "wolfx",
+    "parser_name": "kma_wolfx_http",
+    "presentation_type": "earthquake_eew",
+    "config_group": "wolfx",
+    "config_key": "kma_eew",
+    "priority": 0,
+    "display_name": "韩国气象厅(Wolfx HTTP)",
+    "default_timezone": "Asia/Seoul",
+    "institution_key": "kma",
+    "institution_display_name": "KMA 韩国气象厅 地震预警",
+    "query_group": "eew",
+    "dispatch_family": "wolfx_eew"
   },
   "sc_wolfx_http": {
     "source_id": "sc_wolfx_http",
@@ -862,13 +884,12 @@
     "config_group": "wolfx",
     "config_key": "sichuan_earthquake_warning",
     "priority": 0,
-    "display_name": "四川地震局(SC)",
+    "display_name": "四川省地震局(Wolfx HTTP)",
     "default_timezone": "Asia/Shanghai",
     "institution_key": "sc",
     "institution_display_name": "四川地震局 EEW",
     "query_group": "eew",
-    "dispatch_family": "wolfx_eew",
-    "code_override": "SC-W(h)"
+    "dispatch_family": "wolfx_eew"
   },
   "fj_wolfx_http": {
     "source_id": "fj_wolfx_http",
@@ -879,13 +900,12 @@
     "config_group": "wolfx",
     "config_key": "fujian_earthquake_warning",
     "priority": 0,
-    "display_name": "福建地震局(FJ)",
+    "display_name": "福建省地震局(Wolfx HTTP)",
     "default_timezone": "Asia/Shanghai",
     "institution_key": "fj",
     "institution_display_name": "福建地震局 EEW",
     "query_group": "eew",
-    "dispatch_family": "wolfx_eew",
-    "code_override": "FJ-W(h)"
+    "dispatch_family": "wolfx_eew"
   },
   "cq_wolfx_http": {
     "source_id": "cq_wolfx_http",
@@ -896,13 +916,12 @@
     "config_group": "wolfx",
     "config_key": "chongqing_earthquake_warning",
     "priority": 0,
-    "display_name": "重庆地震局(CQ)",
+    "display_name": "重庆市地震局(Wolfx HTTP)",
     "default_timezone": "Asia/Shanghai",
     "institution_key": "cq",
     "institution_display_name": "重庆地震局 EEW",
     "query_group": "eew",
-    "dispatch_family": "wolfx_eew",
-    "code_override": "CQ-W(h)"
+    "dispatch_family": "wolfx_eew"
   },
   "jma_wolfx_info_http": {
     "source_id": "jma_wolfx_info_http",
@@ -913,7 +932,7 @@
     "config_group": "wolfx",
     "config_key": "jma_earthquake_report",
     "priority": 0,
-    "display_name": "日本气象厅(JMA)",
+    "display_name": "日本气象厅(Wolfx HTTP情报)",
     "default_timezone": "Asia/Tokyo",
     "connection_handler": "http_poll",
     "connection_url": "https://api.wolfx.jp/jma_eqlist.json",
@@ -928,8 +947,7 @@
     ],
     "metadata": {
       "poll_interval": "60"
-    },
-    "code_override": "JMA-W(h)"
+    }
   },
   "sc_wolfx_eew": {
     "source_id": "sc_wolfx_eew",
@@ -940,7 +958,7 @@
     "config_group": "wolfx",
     "config_key": "sichuan_earthquake_warning",
     "priority": 0,
-    "display_name": "四川地震局(SC)",
+    "display_name": "四川省地震局(SC)",
     "default_timezone": "Asia/Shanghai",
     "connection_handler": "wolfx",
     "connection_url": "wss://ws-api.wolfx.jp/all_eew",
@@ -955,8 +973,7 @@
     ],
     "provider_message_types": [
       "sc_eew"
-    ],
-    "code_override": "SC-W(w)"
+    ]
   },
   "fj_wolfx_eew": {
     "source_id": "fj_wolfx_eew",
@@ -967,7 +984,7 @@
     "config_group": "wolfx",
     "config_key": "fujian_earthquake_warning",
     "priority": 0,
-    "display_name": "福建地震局(FJ)",
+    "display_name": "福建省地震局(FJ)",
     "default_timezone": "Asia/Shanghai",
     "connection_handler": "wolfx",
     "connection_url": "wss://ws-api.wolfx.jp/all_eew",
@@ -982,8 +999,7 @@
     ],
     "provider_message_types": [
       "fj_eew"
-    ],
-    "code_override": "FJ-W(w)"
+    ]
   },
   "cq_wolfx_eew": {
     "source_id": "cq_wolfx_eew",
@@ -994,7 +1010,7 @@
     "config_group": "wolfx",
     "config_key": "chongqing_earthquake_warning",
     "priority": 0,
-    "display_name": "重庆地震局(CQ)",
+    "display_name": "重庆市地震局(CQ)",
     "default_timezone": "Asia/Shanghai",
     "connection_handler": "wolfx",
     "connection_url": "wss://ws-api.wolfx.jp/all_eew",
@@ -1009,8 +1025,7 @@
     ],
     "provider_message_types": [
       "cq_eew"
-    ],
-    "code_override": "CQ-W(w)"
+    ]
   },
   "jma_p2p": {
     "source_id": "jma_p2p",
@@ -1167,21 +1182,6 @@
     "metadata": {
       "poll_interval": "60"
     }
-  },
-  "cenc_wolfx_info_http": {
-    "source_id": "cenc_wolfx_info_http",
-    "source_type": "earthquake_info",
-    "provider_family": "wolfx",
-    "parser_name": "cenc_wolfx_info_http",
-    "presentation_type": "earthquake_report",
-    "config_group": "wolfx",
-    "priority": 0,
-    "display_name": "中国地震台网(CENC)",
-    "default_timezone": "Asia/Shanghai",
-    "institution_key": "",
-    "code_override": "CENC-W(h)",
-    "config_key": "china_cenc_earthquake",
-    "query_group": "earthquake"
   },
   "global_quake": {
     "source_id": "global_quake",
@@ -1409,65 +1409,5 @@
     "metadata": {
       "legal_warning": "此数据源不得上传至任何公开仓库"
     }
-  },
-  "cenc_eew_http": {
-    "source_id": "cenc_eew_http",
-    "source_type": "earthquake_warning",
-    "provider_family": "direct_http",
-    "parser_name": "cenc_eew_http",
-    "presentation_type": "earthquake_eew",
-    "config_group": "direct_http",
-    "config_key": "cenc_eew",
-    "priority": 5,
-    "display_name": "中国地震预警网(CEA)",
-    "description": "CENC 全国 EEW（alarm_type=1，替代 FAN CEA）",
-    "default_timezone": "Asia/Shanghai",
-    "institution_key": "cea",
-    "code_override": "CEA(CAPQHT)",
-    "institution_display_name": "中国地震预警网",
-    "institution_active_name": "中国地震预警网",
-    "query_group": "eew",
-    "metadata": {
-      "note": "替代 FAN CEA EEW — 全国汇总源 alarm_type=1"
-    }
-  },
-  "cenc_eew_province": {
-    "source_id": "cenc_eew_province",
-    "source_type": "earthquake_warning",
-    "provider_family": "direct_http",
-    "parser_name": "cenc_eew_province",
-    "presentation_type": "earthquake_eew",
-    "config_group": "direct_http",
-    "config_key": "cenc_eew_province",
-    "priority": 4,
-    "display_name": "中国地震预警网省级融合源(CEA-pr)",
-    "description": "CENC 省网 EEW（alarm_type=1，替代 FAN CEA-PR）",
-    "default_timezone": "Asia/Shanghai",
-    "institution_key": "cea",
-    "code_override": "CEA-pr",
-    "institution_display_name": "中国地震预警网省级融合源",
-    "institution_active_name": "中国地震预警网省级融合源",
-    "query_group": "eew",
-    "metadata": {
-      "note": "替代 FAN CEA-PR EEW — 各省 app_id alarm_type=1"
-    }
-  },
-  "cenc_report_http": {
-    "source_id": "cenc_report_http",
-    "source_type": "earthquake_info",
-    "provider_family": "direct_http",
-    "parser_name": "cenc_report_http",
-    "presentation_type": "earthquake_report",
-    "config_group": "direct_http",
-    "config_key": "cenc_report",
-    "priority": 5,
-    "display_name": "中国地震台网(CENC-报告)",
-    "description": "CENC 省网正式地震报告（全国汇总源）",
-    "default_timezone": "Asia/Shanghai",
-    "institution_key": "cenc",
-    "code_override": "CENC-R",
-    "institution_display_name": "CENC 报告 中国地震台网",
-    "institution_active_name": "CENC 报告",
-    "query_group": "earthquake"
   }
 }

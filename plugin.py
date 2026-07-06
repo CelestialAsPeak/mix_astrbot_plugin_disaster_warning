@@ -38,7 +38,6 @@ try:
     from .message.browser import BrowserManager
     from .message.render.typhoon_map_renderer import TyphoonMapRenderer
     from .message.render.snet_map_renderer import SnetMapRenderer
-    from .message.render.hypo_renderer import HypoRenderer, parse_date_args
     from .message.notification import SystemNotificationService, NotificationCenter
     from .storage.database import DatabaseManager
     from .storage.stats import StatisticsManager
@@ -58,12 +57,11 @@ except ImportError:
     from broker.websocket import WebSocketManager
     from broker.http_poller import HttpPollManager
     from message.push import SessionSender, PushExecutionService, PushOrchestrator
-    from domain.models import EewEvent, EarthquakeReport, EventEnvelope
+    from domain.models import EewEvent, EventEnvelope
     from message.presenters import present, present_eew, present_earthquake_report, WEATHER_TYPE_MAP, LEVEL_COLORS
     from message.browser import BrowserManager
     from message.render.typhoon_map_renderer import TyphoonMapRenderer
     from message.render.snet_map_renderer import SnetMapRenderer
-    from message.render.hypo_renderer import HypoRenderer, parse_date_args
     from message.notification import SystemNotificationService, NotificationCenter
     from storage.database import DatabaseManager
     from storage.stats import StatisticsManager
@@ -79,7 +77,6 @@ from .parser.p2p import eew as p2p_eew, report as p2p_report, tsunami as p2p_tsu
 from .parser.p2p import http_eew as p2p_http_eew, http_report as p2p_http_report, http_tsunami as p2p_http_tsunami
 from .parser import global_quake as gq_parser, snet as snet_parser
 from .parser.http_poll import parsers as http_poll_parsers
-from .parser.http_poll import icl_parser  # noqa: F401 — ICL 注册
 from .parser.typhoon import cma as typhoon_cma, jma as typhoon_jma
 
 
@@ -97,7 +94,6 @@ _SHORT_SRC_MAP: dict[str, str] = {
     "geonet": "geonet_http", "nrcan": "nrcan_http",
     "csnc": "csnc_http", "phivolcs": "phivolcs_http",
     "tmd": "tmd_http", "funvisis": "funvisis_http",
-    "bmkg": "bmkg_http",
     "cenais": "cenais_http", "icl": "icl_http",
     "snet": "snet",
 }
@@ -139,8 +135,6 @@ _SOURCE_DISPLAY: dict[str, str] = {
     "cwa_fanstudio": "台湾气象署", "cwa_wolfx": "CWA(Wolfx)",
     "jma_fanstudio": "日本气象厅", "jma_wolfx": "JMA(Wolfx)", "jma_wolfx_info": "JMA情报(Wolfx)",
     "jma_wolfx_http": "JMA(Wolfx HTTP)", "jma_wolfx_info_http": "JMA情报(Wolfx HTTP)",
-    "cwa_wolfx_http": "CWA(Wolfx HTTP)", "kma_wolfx_http": "KMA(Wolfx HTTP)",
-    "sc_wolfx_http": "四川(Wolfx HTTP)", "fj_wolfx_http": "福建(Wolfx HTTP)", "cq_wolfx_http": "重庆(Wolfx HTTP)",
     "jma_p2p_http": "JMA(P2P HTTP)", "jma_p2p_info_http": "JMA情报(P2P HTTP)", "jma_tsunami_p2p_http": "JMA海啸(P2P HTTP)",
     "jma_p2p": "JMA(P2P)",
     "usgs_fanstudio": "USGS", "emsc_fanstudio": "EMSC",
@@ -153,7 +147,6 @@ _SOURCE_DISPLAY: dict[str, str] = {
     "csnc_http": "CSNC", "phivolcs_http": "PHIVOLCS", "snet_http": "S-net",
     "tmd_http": "TMD", "geonet_http": "GeoNet",
     "nrcan_http": "NRCan", "usgs_weekly": "USGS周报",
-    "bmkg_http": "BMKG",
     "snet": "S-net", "icl_http": "ICL",
     "beijing_fanstudio": "北京", "guangxi_fanstudio": "广西",
     "ningxia_fanstudio": "宁夏", "shanxi_fanstudio": "山西",
@@ -312,96 +305,11 @@ class MixDisasterWarningPlugin(Star):
             validated = ConfigValidator.validate(dict(self.config))
             self.config.update(validated)
 
-            # 从 AppData 生产配置文件加载全部设置（AstrBot 嵌套 schema 持久化不可靠）
-            try:
-                import json
-                _prod_paths = [
-                    Path(self._plugin_root).parent.parent.parent.parent / "AppData" / "Local" / "AstrBot" / "data" / "config" / "mix_astrbot_plugin_disaster_warning_config.json",
-                    Path(self._plugin_root).parent.parent / "config" / "mix_astrbot_plugin_disaster_warning_config.json",
-                ]
-                for _cfg_path in _prod_paths:
-                    if _cfg_path.exists():
-                        with open(_cfg_path, encoding="utf-8-sig") as _f:
-                            _file_cfg = json.load(_f)
-                        # earthquake_filters: 用文件值覆盖，但跳过全是 0 的条目
-                        # （AstrBot 持久化bug导致某些 filter 被写成了全零）
-                        _file_ef = _file_cfg.get("earthquake_filters")
-                        if isinstance(_file_ef, dict):
-                            _cur_ef = self.config.get("earthquake_filters", {})
-                            if not isinstance(_cur_ef, dict):
-                                _cur_ef = {}
-                            for _fid, _fcfg in _file_ef.items():
-                                if _fid not in _cur_ef:
-                                    _cur_ef[_fid] = _fcfg  # 补充缺失的 filter
-                                elif isinstance(_fcfg, dict):
-                                    # 已存在的 filter：只有文件有非零值才覆盖（用户通过 Web 界面设的）
-                                    _fm = _fcfg.get("min_magnitude", 0)
-                                    _fi = _fcfg.get("最小烈度", 0)
-                                    if _fm != 0 or _fi != 0:
-                                        _cur_ef[_fid] = _fcfg
-                            self.config["earthquake_filters"] = _cur_ef
-                        # groups: 支持 list 和 dict 两种格式
-                        _file_grp = _file_cfg.get("groups")
-                        if isinstance(_file_grp, list):
-                            self.config["groups"] = list(_file_grp)
-                        elif isinstance(_file_grp, dict):
-                            self.config["groups"] = dict(_file_grp)
-                        # 其他字段直接覆盖
-                        for _k in ("push_frequency_control",
-                                   "message_format", "weather_config", "strategies",
-                                   "debug_config", "local_monitoring", "websocket_config",
-                                   "display_timezone", "group_sessions"):
-                            if _k in _file_cfg and isinstance(_file_cfg[_k], dict):
-                                self.config[_k] = _file_cfg[_k]
-                        # sleep_earthquake_filters: 用文件值覆盖，但跳过全是 0/默认值的条目
-                        # （AstrBot 持久化bug导致嵌套 schema 的 default 覆盖用户设置）
-                        _file_sleep = _file_cfg.get("sleep_earthquake_filters")
-                        if isinstance(_file_sleep, dict):
-                            _cur_sleep = self.config.get("sleep_earthquake_filters", {})
-                            if not isinstance(_cur_sleep, dict):
-                                _cur_sleep = {}
-                            for _fid, _fcfg in _file_sleep.items():
-                                if _fid not in _cur_sleep:
-                                    _cur_sleep[_fid] = _fcfg
-                                elif isinstance(_fcfg, dict):
-                                    _fm = _fcfg.get("min_magnitude", 0)
-                                    _fi = _fcfg.get("最小烈度", 0)
-                                    if _fm != 0 or _fi != 0:
-                                        _cur_sleep[_fid] = _fcfg
-                            self.config["sleep_earthquake_filters"] = _cur_sleep
-                            # 调试日志：追踪 GQ sleep filter 值
-                            _gq_sleep = _cur_sleep.get("global_quake_filter", {})
-                            if isinstance(_gq_sleep, dict):
-                                logger.info(f"[Mix] sleep GQ 最小烈度 = {_gq_sleep.get('最小烈度', '未配置')} "
-                                            f"(文件值={_file_sleep.get('global_quake_filter', {}).get('最小烈度', 'N/A')})")
-                        logger.info(f"[Mix] 已从 {_cfg_path.name} 加载生产配置")
-                        break
-            except Exception as _e:
-                logger.warning(f"[Mix] 无法从文件加载生产配置: {_e}")
-
-            # ── sleep_earthquake_filters: 从独立文件加载（绕过 AstrBot 配置持久化 bug）──
-            self._sleep_filters_path = self._get_storage_path() / "sleep_filters.json"
-            try:
-                if self._sleep_filters_path.exists():
-                    with open(self._sleep_filters_path, encoding="utf-8") as _sf:
-                        _sf_data = json.load(_sf)
-                    if isinstance(_sf_data, dict) and _sf_data:
-                        self.config["sleep_earthquake_filters"] = _sf_data
-                        logger.info(f"[Mix] 已从 sleep_filters.json 加载睡眠阈值")
-                        _gq = _sf_data.get("global_quake_filter", {})
-                        if isinstance(_gq, dict):
-                            logger.info(f"[Mix] sleep GQ 最小烈度（独立文件）= {_gq.get('最小烈度', '未配置')}")
-            except Exception as _e:
-                logger.warning(f"[Mix] 加载 sleep_filters.json 失败: {_e}")
-
             self.database = DatabaseManager(self._get_storage_path() / "events.db")
             await self.database.initialize()
 
             self.stats_manager = StatisticsManager(dict(self.config))
-            self.session_config_manager = SessionConfigManager(dict(self.config), storage_path=self._get_storage_path())
-            # 确认 groups 是否加载成功
-            _loaded_groups = self.session_config_manager.list_groups()
-            logger.info(f"[Mix] SessionConfigManager 群组: {list(_loaded_groups.keys())}")
+            self.session_config_manager = SessionConfigManager(dict(self.config))
             self.notification_center = NotificationCenter()
 
             await self.browser_manager.initialize()
@@ -441,14 +349,10 @@ class MixDisasterWarningPlugin(Star):
                 push_callback=self._typhoon_push_adapter,
             )
             logger.info("[Mix] 台风管理器就绪")
-            # 台风轮询任务（受配置控制）
-            _typhoon_enabled = self.config.get("data_sources", {}).get("typhoon", {}).get("enabled", True)
-            if _typhoon_enabled:
-                self._typhoon_cma_task = asyncio.create_task(self._run_typhoon_poll("cma", 300))
-                self._typhoon_jma_task = asyncio.create_task(self._run_typhoon_poll("jma", 600))
-                self._typhoon_cleanup_task = asyncio.create_task(self._run_typhoon_cleanup())
-            else:
-                logger.info("[台风] 数据源已禁用，不启动轮询")
+            # 立即创建台风轮询任务（不依赖 _run_service）
+            self._typhoon_cma_task = asyncio.create_task(self._run_typhoon_poll("cma", 300))
+            self._typhoon_jma_task = asyncio.create_task(self._run_typhoon_poll("jma", 600))
+            self._typhoon_cleanup_task = asyncio.create_task(self._run_typhoon_cleanup())
 
             session_sender = SessionSender(self.context)
             push_svc = PushExecutionService(
@@ -456,7 +360,6 @@ class MixDisasterWarningPlugin(Star):
                 snet_renderer=self._snet_renderer, gq_card_builder=self._gq_card_builder,
                 intensity_img_renderer=self._intensity_img_renderer,
             )
-            self._push_svc = push_svc
             self._orchestrator = PushOrchestrator(dict(self.config), push_svc.execute_push, sender=session_sender)
 
             # 融合编排器（需要在 pipeline 之前创建，因为 pipeline 依赖它）
@@ -785,22 +688,15 @@ class MixDisasterWarningPlugin(Star):
 
     async def _ws_message_handler(self, name: str, raw_data: str | bytes) -> None:
         """WebSocket 消息处理器 — 组级→源级路由。"""
-        # 统一转文本尝试 JSON 解析
+        logger.info(f"[WS] 收到消息: {name} ({len(raw_data) if isinstance(raw_data, (str,bytes)) else type(raw_data).__name__})")
+
+        # 统一转文本尝试 JSON 解析（需要提前解析以检查 initial_all）
         text = raw_data.decode("utf-8", errors="replace") if isinstance(raw_data, bytes) else raw_data
         data_for_check = None
         try:
             data_for_check = json.loads(text)
         except Exception:
             pass
-
-        # 日志：WS 消息摘要（GQ 二进制源不逐条打日志）
-        extra = ""
-        if isinstance(data_for_check, dict):
-            extra = f" type={data_for_check.get('type','?')}"
-            if "source" in data_for_check:
-                extra += f" source={data_for_check['source']}"
-        if name != "global_quake":
-            logger.info(f"[WS] ← {name}{extra}")
 
         # initial_all 永远处理（不受静默期限制），直接入库不走推送
         if isinstance(data_for_check, dict) and name == "fan_studio" and data_for_check.get("type") == "initial_all":
@@ -842,7 +738,7 @@ class MixDisasterWarningPlugin(Star):
             await self.signal_bus.emit(name, data)
 
     def _match_fan_by_signature(self, payload: dict) -> str | None:
-        """按 payload 特征签名匹配 FAN Studio 源（含排除条件）。"""
+        """按 payload 特征签名匹配 FAN Studio 源。"""
         if not isinstance(payload, dict):
             return None
         pkeys = set(payload.keys())
@@ -850,17 +746,6 @@ class MixDisasterWarningPlugin(Star):
             entry = self._sources.get(sid) if hasattr(self, '_sources') else None
             if not isinstance(entry, dict):
                 continue
-
-            # 排除条件：payload 包含某组中任一字段 → 跳过该源
-            exclusions = entry.get("payload_exclusions", [])
-            excluded = False
-            for excl_group in exclusions:
-                if any(f in pkeys for f in excl_group):
-                    excluded = True
-                    break
-            if excluded:
-                continue
-
             sigs = entry.get("payload_signatures", [])
             for sig in sigs:
                 if all(k in pkeys for k in sig):
@@ -880,6 +765,7 @@ class MixDisasterWarningPlugin(Star):
     async def _route_fan_studio(self, data: dict) -> None:
         """FAN Studio JSON 消息内部路由（兼容 initial_all 和 update）。"""
         msg_type = data.get("type", "unknown")
+        logger.info(f"[Fan] 路由消息 type={msg_type}, keys={list(data.keys())[:6]}")
 
         if msg_type == "initial_all":
             # initial_all 是 WebSocket 重连后的全量快照
@@ -890,14 +776,10 @@ class MixDisasterWarningPlugin(Star):
                     continue
                 source_data = data.get(key)
                 if isinstance(source_data, dict):
-                    # initial_all 包了 Data 层，需解包（FAN: {"Data": {...}, "md5": "..."}）
-                    inner = source_data.get("Data") or source_data.get("data") or source_data
-                    if not isinstance(inner, dict):
-                        continue
                     parser = ParserRegistry.get(sid)
                     if parser:
                         try:
-                            result = parser.parse_message(inner)
+                            result = parser.parse_message(source_data)
                             if result:
                                 for env in (result if isinstance(result, list) else [result]):
                                     if self.database:
@@ -905,10 +787,10 @@ class MixDisasterWarningPlugin(Star):
                                     stored += 1
                         except Exception:
                             pass
-            logger.info(f"[Fan] initial_all 入库: {stored} 条（静默期不推送）")
+            logger.info(f"[Fan] initial_all 入库: {stored} 条")
             return
 
-        # 心跳静默（不打日志，刷屏）
+        # 心跳静默
         if msg_type in ("heartbeat", "ping", "pong"):
             return
 
@@ -932,14 +814,12 @@ class MixDisasterWarningPlugin(Star):
                 if sid:
                     if sid == "china_weather_fanstudio":
                         return
-                    logger.info(f"[Fan] ← {sid}")
                     await self.signal_bus.emit(sid, payload)
                     return
 
             # 2. 按 payload 签名兜底（处理同族模糊源）
             sid = self._match_fan_by_signature(payload)
             if sid:
-                logger.info(f"[Fan] ← {sid}（签名匹配）")
                 await self.signal_bus.emit(sid, payload)
                 return
 
@@ -1034,7 +914,7 @@ class MixDisasterWarningPlugin(Star):
             self.ws_manager.add_connection(name, cfg["url"], cfg.get("backup", ""))
 
     async def _handle_http_poll_result(self, source_id: str, raw_data: Any) -> None:
-        """HTTP 轮询结果处理：追踪所有 event_id，首次入库不推，新事件再推。"""
+        """HTTP 轮询结果处理：取最新一条，首条不推，变化才推。"""
         import re
         from datetime import datetime, timezone
         try:
@@ -1057,88 +937,75 @@ class MixDisasterWarningPlugin(Star):
             logger.info(f"[HTTP] {source_id} 解析结果为空列表")
             return
 
-        # 该源所有见过的唯一键（event_id|report_num，EEW 报次更新不拦截）
-        seen_key = f"{source_id}:seen"
-        seen: set = self._http_last_event.get(seen_key)
-        is_first = seen is None
-        if seen is None:
-            seen = set()
-            self._http_last_event[seen_key] = seen
+        # 按发生时间降序排序，确保取到最新一条
+        # 部分 API 返回正序（旧→新），不能直接用 envelopes[0]
+        _epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+        try:
+            envelopes.sort(
+                key=lambda e: e.event.occurred_at if e.event.occurred_at is not None else _epoch,
+                reverse=True,
+            )
+        except TypeError:
+            # 混合 naive/aware datetime 兜底，维持解析器原始顺序
+            pass
+        newest = envelopes[0]
+        eid = newest.identity.event_id
 
-        new_envs = []
-        for env in envelopes:
-            uid = env.identity.unique_key
-            if uid not in seen:
-                seen.add(uid)
-                new_envs.append(env)
+        # ── NRCan md5 回退警告 ──
+        if source_id == "nrcan_http" and len(eid) == 12 and not re.search(r'\d{4,}', eid):
+            logger.warning(f"[HTTP] nrcan_http event_id 疑似 md5 回退: {eid}，注意 ID 可能不稳定")
 
-        if not new_envs:
+        # 比较上次推送过的 ID
+        last = self._http_last_event.get(source_id)
+        if last is None:
+            # 首次启动：记录 ID + 入库（不推送）
+            self._http_last_event[source_id] = {"event_id": eid}
+            if self.database:
+                try:
+                    await self.database.insert_envelope(newest)
+                    logger.info(f"[HTTP] {source_id} 首条已入库: {eid}")
+                except Exception as ex:
+                    logger.warning(f"[HTTP] {source_id} 首条入库失败: {ex}")
+            else:
+                logger.info(f"[HTTP] {source_id} 首条已记录（不推送）: {eid}")
             return
 
-        if is_first:
-            stored = 0
-            if self.database:
-                for env in new_envs:
-                    try:
-                        await self.database.insert_envelope(env)
-                        stored += 1
-                    except Exception:
-                        pass
-            logger.info(f"[HTTP] << {source_id}: {len(new_envs)} 条入库{'（首条不推送）' if stored else '（无DB）'}")
-        else:
-            pushed = 0
-            for env in new_envs:
-                ev = env.event
-                mag = getattr(ev, "magnitude", None)
-                place = getattr(ev, "place_name", None) or getattr(ev, "region", None) or ""
-                occurred = getattr(ev, "occurred_at", None) or getattr(ev, "timestamp", None)
-                time_s = occurred.strftime("%H:%M:%S") if occurred else "?"
-                mag_s = f" M{mag:.1f}" if mag is not None else ""
-                if self.pipeline:
-                    try:
-                        await self.pipeline.handle(env)
-                        pushed += 1
-                        logger.info(f"[HTTP] << {source_id}: {time_s}{mag_s} {place}".strip())
-                    except Exception as ex:
-                        logger.error(f"[HTTP] {source_id} {env.identity.event_id} pipeline.handle 失败: {ex}")
-                        import traceback
-                        logger.error(traceback.format_exc())
-            if pushed:
-                logger.info(f"[HTTP] << {source_id}: {pushed}/{len(new_envs)} 条推送")
+        if eid == last.get("event_id"):
+            # 没有变化，跳过（debug 级别避免刷日志）
+            return
 
-        # NRCan md5 回退警告
-        if source_id == "nrcan_http":
-            for env in new_envs:
-                eid = env.identity.event_id
-                if len(eid) == 12 and not re.search(r"\d{4,}", eid):
-                    logger.warning(f"[HTTP] nrcan_http event_id 疑似 md5 回退: {eid}")
-                    break
+        # 有新事件 → 推送，成功后更新记录
+        logger.info(f"[HTTP] {source_id} 发现新事件: {eid}")
+        if self.pipeline:
+            try:
+                await self.pipeline.handle(newest)
+            except Exception as ex:
+                logger.error(f"[HTTP] {source_id} pipeline.handle 失败: {ex}")
+                return  # 不更新 last_event_id，下次轮询重试
+
+        # 推送成功后才更新记录
+        self._http_last_event[source_id] = {"event_id": eid}
+
     def _setup_http_pollers(self, sources: dict, router: MessageRouter):
-        # (name, url, interval, raw_text, ssl)
+        # ⚠️ ICL（成都高新减灾研究所）属于未公开/非官方数据源，
+        #    接入存在法律风险，故意不添加。如果你知道自己在做什么，
+        #    可以自己在这里加上 icl_http 的 poller。
         POLLERS = {
-            "funvisis_http": ("http://www.funvisis.gob.ve/maravilla.json", 10, True),
-            "cenais_http": ("https://www.cenais.gob.cu/lastquake/php/lastweek.php", 10, True),
-            "geonet_http": ("https://api.geonet.org.nz/quake?MMI=-1", 10, False),
-            "nrcan_http": ("https://www.earthquakescanada.nrcan.gc.ca/cache/earthquakes/canada-30.xml", 10, True),
-            "tmd_http": ("https://earthquake.tmd.go.th/", 10, True),
-            "phivolcs_http": ("https://earthquake.phivolcs.dost.gov.ph/", 10, True),
-            "csnc_http": ("https://www.sismologia.cl/index.html", 10, True),
-            "usgs_weekly": ("https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_week.geojson", 10, False),
-            # Wolfx HTTP EEW（按需轮询，查的时候即时抓）
-            "jma_wolfx_http": ("https://api.wolfx.jp/jma_eew.json", 86400, False),
-            "cwa_wolfx_http": ("https://api.wolfx.jp/cwa_eew.json", 86400, False),
-            "kma_wolfx_http": ("https://api.wolfx.jp/kma_eew.json", 86400, False),
-            "sc_wolfx_http": ("https://api.wolfx.jp/sc_eew.json", 86400, False),
-            "fj_wolfx_http": ("https://api.wolfx.jp/fj_eew.json", 86400, False),
-            "cq_wolfx_http": ("https://api.wolfx.jp/cq_eew.json", 86400, False),
-            # Wolfx HTTP 地震情报（备用）
-            "jma_wolfx_info_http": ("https://api.wolfx.jp/jma_eqlist.json", 86400, False),
-            # P2P HTTP 备用（EEW警报主源 + 情报）
-            "jma_p2p_http": ("https://api.p2pquake.net/v2/history?codes=556&limit=1", 1, False),
-            "jma_p2p_info_http": ("https://api.p2pquake.net/v2/jma/quake?limit=5", 1, False),
+            "funvisis_http": ("http://www.funvisis.gob.ve/maravilla.json", 120, True),
+            "cenais_http": ("https://www.cenais.gob.cu/lastquake/php/lastweek.php", 120, True),
+            "geonet_http": ("https://api.geonet.org.nz/quake?MMI=-1", 30, False),
+            "nrcan_http": ("https://www.earthquakescanada.nrcan.gc.ca/cache/earthquakes/canada-30.xml", 60, True),
+            "tmd_http": ("https://earthquake.tmd.go.th/", 120, True),
+            "phivolcs_http": ("https://earthquake.phivolcs.dost.gov.ph/", 120, True),
+            "csnc_http": ("https://www.sismologia.cl/index.html", 120, True),
+            "usgs_weekly": ("https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_week.geojson", 300, False),
+            # Wolfx HTTP 备用（WS 失能时降级）
+            "jma_wolfx_http": ("https://api.wolfx.jp/jma_eew.json", 30, False),
+            "jma_wolfx_info_http": ("https://api.wolfx.jp/jma_eqlist.json", 60, False),
+            # P2P HTTP 备用（WS 失能时降级）
+            "jma_p2p_http": ("https://api.p2pquake.net/v2/history?codes=556&limit=1", 30, False),
+            "jma_p2p_info_http": ("https://api.p2pquake.net/v2/jma/quake?limit=5", 60, False),
             "jma_tsunami_p2p_http": ("https://api.p2pquake.net/v2/history?codes=552&limit=1", 60, False),
-            # BMKG 印尼气象局地震报告
-            "bmkg_http": ("https://data.bmkg.go.id/DataMKG/TEWS/gempadirasakan.json", 5, False),
         }
         for sid, (url, interval, raw_text) in POLLERS.items():
             if sid in sources:
@@ -1147,41 +1014,6 @@ class MixDisasterWarningPlugin(Star):
                     handler=self._handle_http_poll_result,
                     raw_text=raw_text,
                 )
-        # ICL（成都高新减灾研究所）— URL 仅在生产配置文件（AppData）中设置
-        icl_url = ""
-        try:
-            import json as _json
-            # 尝试多个路径：AppData 生产配置优先，dev 配置兜底
-            _paths = [
-                os.path.normpath(os.path.join(
-                    os.path.dirname(os.path.abspath(__file__)),
-                    "..", "..", "config", "mix_astrbot_plugin_disaster_warning_config.json"
-                )),
-                os.path.normpath(os.path.join(
-                    os.environ.get("LOCALAPPDATA", ""),
-                    "AstrBot", "data", "config", "mix_astrbot_plugin_disaster_warning_config.json"
-                )),
-            ]
-            for _p in _paths:
-                if not _p or not os.path.exists(_p):
-                    continue
-                with open(_p, encoding="utf-8-sig") as _f:  # utf-8-sig 兼容 BOM
-                    _d = _json.load(_f)
-                    icl_url = _d.get("icl_api_url", "") or ""
-                    if icl_url:
-                        logger.info(f"[ICL] 读取 ICL URL 成功")
-                        break
-                    else:
-                        logger.warning(f"[ICL] 配置中存在但为空: {_p}")
-        except Exception as _e:
-            logger.warning(f"[ICL] 读取配置失败: {_e}")
-        if icl_url and "icl_http" in sources:
-            self.http_poll_manager.add_poller(
-                name="icl_http", url=icl_url, interval=2,
-                handler=self._handle_http_poll_result,
-                raw_text=True, ssl=False,
-            )
-            logger.info("[ICL] 已加载 ICL 轮询器")
 
     # ═══════════════════ 数据查询 ═══════════════════
 
@@ -1390,13 +1222,9 @@ class MixDisasterWarningPlugin(Star):
         lines = ["📢 群组列表"]
         for gid in groups:
             sessions = self.session_config_manager.get_group_sessions(gid)
-            # 检查群组是否在睡眠模式列表中
-            sleep_mode_groups = self.session_config_manager.global_config.get("sleep_mode_groups", []) or []
-            sleep_mode = gid in sleep_mode_groups
             gf = self.session_config_manager.get_group_filters(gid)
             filter_count = sum(1 for v in gf.values() if isinstance(v, dict)) if isinstance(gf, dict) else 0
-            sleep_icon = "🌙" if sleep_mode else "☀️"
-            lines.append(f"  {sleep_icon} {gid}: {len(sessions)} 会话, {filter_count} 个阈值覆盖")
+            lines.append(f"  {gid}: {len(sessions)} 会话, {filter_count} 个阈值覆盖")
         yield event.plain_result("\n".join(lines))
 
     @filter.regex(r"^/灾害预警群组\s+(\S+)(?:\s|$)")
@@ -1478,61 +1306,6 @@ class MixDisasterWarningPlugin(Star):
             yield event.plain_result(f"✅ 已清除群组 {group_id} 的 {source_id} 阈值覆盖")
         else:
             yield event.plain_result(f"✅ 已清除群组 {group_id} 的所有阈值覆盖")
-
-    # ═══════════════════ 命令: 睡眠阈值（独立文件，绕过 AstrBot 配置 bug） ═══════════════════
-
-    @filter.regex(r"^/灾害预警睡眠阈值\s+(\S+)\s+(\S+)\s+([\d.]+)(?:\s|$)")
-    async def sleep_threshold_set_cmd(
-        self, event: AstrMessageEvent,
-        filter_id: str, field: str, value: str,
-    ):
-        """设置睡眠模式过滤阈值（存独立文件，不受 AstrBot 配置污染）。
-        用法: /灾害预警睡眠阈值 global_quake_filter 最小烈度 8.0
-        """
-        if not await self._is_admin(event):
-            yield event.plain_result("❌ 仅管理员")
-            return
-
-        try:
-            val = float(value)
-        except ValueError:
-            yield event.plain_result(f"❌ 无效值: {value}")
-            return
-
-        # 读现有文件
-        sf_data = {}
-        if self._sleep_filters_path and self._sleep_filters_path.exists():
-            try:
-                with open(self._sleep_filters_path, encoding="utf-8") as _sf:
-                    sf_data = json.load(_sf)
-            except Exception:
-                sf_data = {}
-        if not isinstance(sf_data, dict):
-            sf_data = {}
-
-        # 写入
-        if filter_id not in sf_data or not isinstance(sf_data[filter_id], dict):
-            sf_data[filter_id] = {}
-        sf_data[filter_id][field] = val
-
-        # 存回文件
-        try:
-            self._sleep_filters_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(self._sleep_filters_path, "w", encoding="utf-8") as _sf:
-                json.dump(sf_data, _sf, ensure_ascii=False, indent=2)
-        except Exception as e:
-            yield event.plain_result(f"❌ 写入失败: {e}")
-            return
-
-        # 覆盖运行时 config 并重建 SessionConfigManager
-        self.config["sleep_earthquake_filters"] = sf_data
-        self.session_config_manager = SessionConfigManager(dict(self.config))
-        logger.info(f"[Mix] 睡眠阈值已更新: {filter_id}.{field}={val}")
-
-        yield event.plain_result(
-            f"✅ 睡眠阈值已设置: {filter_id}.{field}={val}\n"
-            f"📁 独立文件: {self._sleep_filters_path}"
-        )
 
     # ═══════════════════ 命令: 查询 ═══════════════════
 
@@ -1616,11 +1389,11 @@ class MixDisasterWarningPlugin(Star):
 
     # ── /盼震 命令（BAK 版移植，多别名） ──
 
-    @filter.regex(r"^/(?:[盼畔叛判拚潘攀盘磐蟠蹒槃鞶][震振镇阵圳朕鸩赈真针珍贞侦斟甄箴砧祯桢诊枕疹缜轸]|earth)(?:\s|$)")
+    @filter.regex(r"^/(?:盘阵|磐震|潘振|盼震|earth)(?:\s|$)")
     async def eew_pending_cmd(self, event: AstrMessageEvent):
         try:
             text = await self._get_eew_status_text()
-            yield event.plain_result(f"正在盘阵中！\n{text}")
+            yield event.plain_result(text)
         except Exception as ex:
             logger.error(f"[盼震] 异常: {ex}", exc_info=True)
             yield event.plain_result(f"❌ 查询失败: {ex}")
@@ -1754,6 +1527,12 @@ class MixDisasterWarningPlugin(Star):
     @filter.regex(r"^/(?:震央|hypo)\s*(.*)$")
     async def hypo_cmd(self, event: AstrMessageEvent):
         """震央分布图。"""
+        import importlib
+        from message.render import hypo_renderer as _hr_mod
+        importlib.reload(_hr_mod)
+        HypoRenderer = _hr_mod.HypoRenderer
+        parse_date_args = _hr_mod.parse_date_args
+
         try:
             raw = (event.message_str or "").strip()
             arg = ""
@@ -1827,19 +1606,13 @@ class MixDisasterWarningPlugin(Star):
         # fallback: EEW-only 源（如 sa_fanstudio）没有 earthquake 类型
         if not rows:
             rows = await self._query_source_eew(source_id, 1)
-        # 查到的数据按时间排序（不是按入库顺序）
-        if rows:
-            rows.sort(key=lambda r: str(r.get("time", "") or ""), reverse=True)
         if not rows:
             # 对于 HTTP 轮询源，DB 无数据时立即触发一次抓取
             _HTTP_SOURCES = {
                 "funvisis_http", "cenais_http", "geonet_http", "nrcan_http",
                 "tmd_http", "phivolcs_http", "csnc_http", "usgs_weekly",
                 "jma_wolfx_http", "jma_wolfx_info_http",
-                "cwa_wolfx_http", "kma_wolfx_http",
-                "sc_wolfx_http", "fj_wolfx_http", "cq_wolfx_http",
                 "jma_p2p_http", "jma_p2p_info_http", "jma_tsunami_p2p_http",
-		"bmkg_http", "icl_http",
             }
             if source_id in _HTTP_SOURCES and self.http_poll_manager:
                 logger.info(f"[查询] {source_id} DB 无数据，触发即时抓取")
@@ -1873,18 +1646,14 @@ class MixDisasterWarningPlugin(Star):
         if ts:
             try:
                 # DB 存的是 occurred_at.isoformat() 格式，如 "2026-06-24T15:30:00+00:00"
-                # 优先用 fromisoformat 保留时区信息（否则 PHIVOLCS +08:00 等会在后面被误当 UTC 加倍偏移）
-                try:
-                    occurred_at = datetime.fromisoformat(ts)
-                except (ValueError, TypeError):
-                    # 降级：处理 "2026/06/06T22:55:16"（CENAIS 原始格式）等无时区格式
-                    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S"):
-                        try:
-                            occurred_at = datetime.strptime(ts[:19].replace("T", " "), fmt)
-                            if occurred_at:
-                                break
-                        except ValueError:
-                            continue
+                # 也处理 "2026/06/06T22:55:16"（CENAIS 原始格式）
+                for fmt in ("%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S"):
+                    try:
+                        occurred_at = datetime.strptime(ts[:19].replace("T", " "), fmt)
+                        if occurred_at:
+                            break
+                    except ValueError:
+                        continue
             except Exception:
                 pass
 
@@ -1906,19 +1675,6 @@ class MixDisasterWarningPlugin(Star):
             )
             text = present_eew(eew)
         else:
-            mmi_val = None
-            if source_id == "bmkg_http":
-                level_raw = r.get("level") or ""
-                if level_raw:
-                    try:
-                        mmi_val = float(level_raw)
-                    except (ValueError, TypeError):
-                        pass
-                if mmi_val is None:
-                    from .parser.http_poll.parsers import _parse_max_mmi
-                    dirasakan = str(raw.get("Dirasakan", "") or "")
-                    if dirasakan:
-                        mmi_val = _parse_max_mmi(dirasakan)
             rep = EarthquakeReport(
                 source_id=source_id,
                 event_id=r.get("real_event_id", "") or source_id,
@@ -1930,7 +1686,6 @@ class MixDisasterWarningPlugin(Star):
                 place_name=r.get("place_name") or r.get("description"),
                 region=r.get("subtitle") or "",
                 report_num=r.get("report_num"),
-                mmi=mmi_val if source_id == "bmkg_http" else None,
                 raw=raw,
             )
             text = present_earthquake_report(rep)
@@ -1947,15 +1702,9 @@ class MixDisasterWarningPlugin(Star):
                 depth = r.get("depth")
                 if mag is not None:
                     try:
-                        if source_id == "bmkg_http" and mmi_val is not None:
-                            s_path, _ = self._intensity_img_renderer.render_both(
-                                mag, depth or 10.0,
-                            )
-                            i_path = self._intensity_img_renderer.render_intensity_actual(str(mmi_val), "最大烈度")
-                        else:
-                            s_path, i_path = self._intensity_img_renderer.render_both(
-                                mag, depth or 10.0,
-                            )
+                        s_path, i_path = self._intensity_img_renderer.render_both(
+                            mag, depth or 10.0,
+                        )
                         for p in (s_path, i_path):
                             if p and os.path.exists(p):
                                 with open(p, "rb") as f:
@@ -2007,23 +1756,7 @@ class MixDisasterWarningPlugin(Star):
 
     @filter.regex(r"^/jma(?:\s|$)")
     async def q_jma(self, e):
-        """JMA 查询 — /jma = P2P JMA地震情报, /jma all = 综合概览。"""
-        raw_text = e.message_str if hasattr(e, 'message_str') else str(e.message_obj)
-        parts = raw_text.strip().split()
-        args = parts[-1] if len(parts) >= 2 else ""
-
-        if args in ("all", "综合", "alll"):
-            # /jma all → 综合概览
-            async for r in self._jma_overview(e):
-                yield r
-            return
-        # /jma → 直接调 P2P 551 API 拿最新日本地震情报
-        async for r in self._jma_live_query(e):
-            yield r
-        return
-
-    async def _jma_overview(self, e):
-        """JMA 综合概览 — EEW + 地震情报 + 海啸。"""
+        """JMA 综合查询 — EEW + 地震情报 + 海啸。"""
         lines = ["📡 JMA 日本气象厅综合"]
         lines.append(_SEPARATOR)
 
@@ -2080,124 +1813,6 @@ class MixDisasterWarningPlugin(Star):
 
         lines.append(_SEPARATOR)
         yield e.plain_result("\n".join(lines))
-
-    async def _jma_live_query(self, e):
-        """直接调 P2P 551 API，跳过 Foreign（遠地地震）。"""
-        import aiohttp
-        try:
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as s:
-                async with s.get("https://api.p2pquake.net/v2/jma/quake?limit=5") as resp:
-                    if resp.status != 200:
-                        yield e.plain_result(f"❌ P2P API {resp.status}")
-                        return
-                    data = await resp.json()
-        except Exception as ex:
-            yield e.plain_result(f"❌ 请求失败: {ex}")
-            return
-
-        if not isinstance(data, list) or not data:
-            yield e.plain_result("📡 暂无 JMA 地震情报")
-            return
-
-        parser = ParserRegistry.get("jma_p2p_info_http")
-        if not parser:
-            yield e.plain_result("❌ 解析器未注册")
-            return
-
-        envelopes = parser.parse_message(data) or []
-        if not envelopes:
-            yield e.plain_result("📡 暂无 JMA 地震情报")
-            return
-
-        # 跳过 Foreign（遠地地震）
-        target = None
-        for env in envelopes:
-            raw = env.event.raw if isinstance(env.event.raw, dict) else {}
-            issue = raw.get("issue", {}) or {}
-            if isinstance(issue, dict) and issue.get("type") == "Foreign":
-                continue
-            target = env
-            break
-
-        if target is None:
-            yield e.plain_result("📡 暂无日本本地 JMA 地震情报")
-            return
-
-        # 展示文本
-        from .message.presenters import present
-        text = present(target)
-        if not text:
-            yield e.plain_result("📡 暂无 JMA 地震情报")
-            return
-
-        # 图片
-        from astrbot.api.message_components import Image
-        chain = [Plain(text)]
-
-        def _img(path):
-            if path and os.path.exists(path):
-                with open(path, "rb") as f:
-                    chain.append(Image.fromBase64(base64.b64encode(f.read()).decode()))
-
-        ev = target.event
-        # 烈度/震度图：优先用实际最大震度
-        if self._intensity_img_renderer:
-            actual_shindo = None
-            if hasattr(ev, 'mmi') and ev.mmi is not None:
-                actual_shindo = ev.mmi
-            elif hasattr(ev, 'intensity_points') and ev.intensity_points:
-                max_s = max(
-                    (p.get("scale") for p in ev.intensity_points
-                     if isinstance(p, dict) and p.get("scale") is not None),
-                    default=None,
-                )
-                if max_s is not None:
-                    actual_shindo = max_s
-            if actual_shindo is not None:
-                from .message.presenters import _shindo_label_str
-                _img(self._intensity_img_renderer.render_shindo_actual(
-                    _shindo_label_str(actual_shindo), "最大震度"))
-            elif ev.magnitude is not None:
-                for p in self._intensity_img_renderer.render_both(ev.magnitude, ev.depth):
-                    _img(p)
-            else:
-                _img(self._intensity_img_renderer.render_shindo_actual("不明", "最大震度"))
-
-        # NHK 双图
-        if self._push_svc:
-            try:
-                nhk_b64 = await self._push_svc._fetch_nhk_report_images(target)
-                if nhk_b64:
-                    for b64 in nhk_b64:
-                        chain.append(Image.fromBase64(b64))
-                else:
-                    # NHK 失败 → PetalMap 双图
-                    if self._map_builder and ev.latitude is not None:
-                        msg_fmt = dict(self.config.get("message_format", {}))
-                        for zoom in (4, 8):
-                            try:
-                                msg_fmt["map_zoom_level"] = zoom
-                                path = await self._map_builder.render_map_image(
-                                    ev.latitude, ev.longitude, msg_fmt)
-                                _img(path)
-                            except Exception as ex:
-                                logger.warning(f"[JMA] 地图 zoom={zoom} 渲染失败: {ex}")
-            except Exception as ex:
-                logger.warning(f"[JMA] NHK 图异常: {ex}")
-        else:
-            # push_svc 未就绪，直接 PetalMap
-            if self._map_builder and ev.latitude is not None:
-                msg_fmt = dict(self.config.get("message_format", {}))
-                for zoom in (4, 8):
-                    try:
-                        msg_fmt["map_zoom_level"] = zoom
-                        path = await self._map_builder.render_map_image(
-                            ev.latitude, ev.longitude, msg_fmt)
-                        _img(path)
-                    except Exception as ex:
-                        logger.warning(f"[JMA] 地图 zoom={zoom} 渲染失败: {ex}")
-
-        yield e.chain_result(chain)
 
     @filter.regex(r"^/usgs(?:\s|$)")
     async def q_usgs(self, e):
@@ -2275,18 +1890,6 @@ class MixDisasterWarningPlugin(Star):
     async def q_yn(self, e):
         async for r in self._quick_query(e, "yunnan_fanstudio", "云南台网"): yield r
 
-    @filter.regex(r"^/(?:四川|sc)(?:\s|$)")
-    async def q_sc(self, e):
-        async for r in self._quick_query(e, "sc_wolfx_http", "四川地震预警"): yield r
-
-    @filter.regex(r"^/(?:福建|fj)(?:\s|$)")
-    async def q_fj(self, e):
-        async for r in self._quick_query(e, "fj_wolfx_http", "福建地震预警"): yield r
-
-    @filter.regex(r"^/(?:重庆|cq)(?:\s|$)")
-    async def q_cq(self, e):
-        async for r in self._quick_query(e, "cq_wolfx_http", "重庆地震预警"): yield r
-
     @filter.regex(r"^/tg(?:\s|$)")
     async def q_tg(self, e):
         async for r in self._quick_query(e, "tmd_http", "TMD"): yield r
@@ -2318,191 +1921,6 @@ class MixDisasterWarningPlugin(Star):
     @filter.regex(r"^/wnrl(?:\s|$)")
     async def q_wnrl(self, e):
         async for r in self._quick_query(e, "funvisis_http", "FUNVISIS"): yield r
-
-    @filter.regex(r"^/bmkg(?:\s|$)")
-    async def q_bmkg(self, e):
-        async for r in self._quick_query(e, "bmkg_http", "BMKG"): yield r
-
-    @filter.regex(r"^/icl(?:\s|$)")
-    async def q_icl(self, e):
-        """ICL 成都高新减灾研究所 — 查询最新地震预警。"""
-        async for r in self._quick_query(e, "icl_http", "ICL"): yield r
-
-    @filter.regex(r"^/556(?:\s|$)")
-    async def q_556(self, event: AstrMessageEvent):
-        """抓取 JMA 紧急地震速报（556）并推送。"""
-        try:
-            import aiohttp
-            import os, base64
-            url = "https://api.p2pquake.net/v2/history?codes=556&limit=1"
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as s:
-                async with s.get(url) as resp:
-                    if resp.status != 200:
-                        yield event.plain_result(f"❌ 556 API {resp.status}")
-                        return
-                    data = await resp.json()
-            try:
-                from .parser.registry import ParserRegistry
-            except ImportError:
-                from parser.registry import ParserRegistry
-            parser = ParserRegistry.get("jma_p2p_http")
-            if not parser:
-                yield event.plain_result("❌ 556解析器未注册")
-                return
-            envelopes = parser.parse_message(data) or []
-            if not envelopes:
-                yield event.plain_result("📡 当前无556警报")
-                return
-            env = envelopes[0]
-            from .message.presenters import present
-            text = present(env)
-            # 横幅图
-            banner = os.path.join(
-                os.path.dirname(__file__), "resources", "images", "jma_eew_banner.jpg"
-            )
-            if os.path.exists(banner):
-                with open(banner, "rb") as f:
-                    b64 = base64.b64encode(f.read()).decode()
-                yield event.chain_result([Plain(text), Image.fromBase64(b64)])
-            else:
-                yield event.plain_result(text)
-        except Exception as ex:
-            yield event.plain_result(f"❌ 556抓取失败: {ex}")
-
-    @filter.regex(r"^/NHK(?:\s|$)")
-    async def q_nhk(self, event: AstrMessageEvent):
-        """查询最新 JMA 551 事件的 NHK 双图（调试用）。"""
-        if not self.database:
-            yield event.plain_result("❌ 数据库未就绪")
-            return
-
-        # 查询最新 JMA 551 事件
-        rows = await self._query_source_events("jma_p2p_info", 1, 1)
-        if not rows:
-            rows = await self._query_source_events("jma_p2p_info_http", 1, 1)
-        if not rows:
-            yield event.plain_result("📡 暂无 JMA 551 事件记录")
-            return
-
-        row = rows[0]
-        import json
-        raw_raw = row.get("raw_json") or "{}"
-        if isinstance(raw_raw, str):
-            try:
-                raw = json.loads(raw_raw)
-            except json.JSONDecodeError:
-                raw = {}
-        elif isinstance(raw_raw, dict):
-            raw = raw_raw
-        else:
-            raw = {}
-
-        if not raw:
-            yield event.plain_result("❌ 事件无原始数据")
-            return
-
-        from .domain.models import EarthquakeReport
-        ev = EarthquakeReport(
-            source_id=row.get("source", "jma_p2p_info"),
-            event_id=row.get("real_event_id", ""),
-            occurred_at=None,
-            latitude=row.get("latitude"),
-            longitude=row.get("longitude"),
-            magnitude=row.get("magnitude"),
-            depth=row.get("depth"),
-            place_name=row.get("place_name", ""),
-            raw=raw,
-        )
-        from .domain.models import EventEnvelope, EventIdentity, SourcePayload
-        env = EventEnvelope(
-            identity=EventIdentity(
-                event_id=ev.event_id, source_id=ev.source_id, event_type="earthquake",
-            ),
-            event=ev,
-            payload=SourcePayload(source_id=ev.source_id, raw=raw),
-        )
-
-        # 提取调试信息
-        eq_t = (raw.get("earthquake", {}) or {}).get("time", "N/A")
-        iss_t = (raw.get("issue", {}) or {}).get("time", "N/A")
-        iss_type = (raw.get("issue", {}) or {}).get("type", "N/A")
-        mag = row.get("magnitude", "?")
-        place = row.get("place_name", "") or row.get("region", "") or "?"
-
-        lines = [
-            f"🔍 NHK 图调试 — M{mag} {place}",
-            f"  ├ earthquake.time: {eq_t}",
-            f"  ├ issue.time:      {iss_t}",
-            f"  ├ issue.type:      {iss_type}",
-        ]
-
-        if not hasattr(self, '_push_svc') or not self._push_svc:
-            lines.append("  └ ❌ PushExecutionService 未就绪")
-            yield event.plain_result("\n".join(lines))
-            return
-
-        from astrbot.api.message_components import Image, Plain
-        try:
-            b64_list = await self._push_svc._fetch_nhk_report_images(env)
-            if b64_list and len(b64_list) == 2:
-                import base64
-                chain = [Plain("\n".join(lines) + "\n  └ ✅ NHK 双图获取成功")]
-                for b64 in b64_list:
-                    chain.append(Image.fromBase64(b64))
-                yield event.chain_result(chain)
-            elif b64_list:
-                lines.append(f"  └ ⚠️ 仅获取 {len(b64_list)}/2 张图")
-                yield event.plain_result("\n".join(lines))
-            else:
-                lines.append("  └ ❌ NHK 图未找到（15s 扫描无命中）")
-                yield event.plain_result("\n".join(lines))
-        except Exception as e:
-            lines.append(f"  └ ❌ 异常: {e}")
-            yield event.plain_result("\n".join(lines))
-
-    @filter.regex(r"^/httpstatus(?:\s|$)")
-    async def http_status_cmd(self, event: AstrMessageEvent):
-        """HTTP 轮询源状态一览。"""
-        lines = ["📡 HTTP 轮询源状态"]
-
-        if not self.http_poll_manager:
-            yield event.plain_result("❌ HTTP 轮询管理器未就绪")
-            return
-
-        pollers = self.http_poll_manager.get_status()
-        if not pollers:
-            yield event.plain_result("📡 没有注册的 HTTP 轮询器")
-            return
-
-        # 显示名映射（仅 HTTP 轮询源）
-        display_map = {
-            "funvisis_http": "FUNVISIS", "cenais_http": "CENAIS",
-            "geonet_http": "GeoNet", "nrcan_http": "NRCan",
-            "tmd_http": "TMD", "phivolcs_http": "PHIVOLCS",
-            "csnc_http": "CSNC", "usgs_weekly": "USGS周报",
-	    "bmkg_http": "BMKG",
-            "jma_wolfx_http": "JMA(Wolfx HTTP)", "jma_wolfx_info_http": "JMA情报(Wolfx HTTP)",
-            "jma_p2p_http": "JMA(P2P HTTP)", "jma_p2p_info_http": "JMA情报(P2P HTTP)",
-            "jma_tsunami_p2p_http": "JMA海啸(P2P HTTP)",
-        }
-
-        # 哪些源有成功返回数据
-        last_events = self._http_last_event  # {source_id: {event_id: ...}}
-        for name, info in pollers.items():
-            display = display_map.get(name, name)
-            running = info["running"]
-            interval = info["interval"]
-            has_data = "✅" if name in last_events else "⏳"
-            status = "🟢 运行中" if running else "🔴 已停止"
-            lines.append(f"  {has_data} {display} {status} ({interval}s)")
-            if name in last_events:
-                last_eid = last_events[name].get("event_id", "?")
-                lines.append(f"     最后事件: {last_eid}")
-
-        # WS → HTTP 备用关系提示
-        lines.append("")
-        lines.append("注: JMA/P2P/Wolfx HTTP 是 WebSocket 备用源，WS 正常时可能无数据")
-        yield event.plain_result("\n".join(lines))
 
     @filter.regex(r"^/(?:snet|s-net|S-Net)(?:\s|$)")
     async def q_snet(self, e):
@@ -2653,64 +2071,6 @@ class MixDisasterWarningPlugin(Star):
                 logger.warning(f"[SNET] 渲染异常: {ex}")
 
         yield e.plain_result(text)
-
-    # ═══════════════════ /nan shen 恶搞指令 ═══════════════════
-
-    @filter.regex(r"^/(?:[男南难楠喃赧腩蝻囡][申伸身深呻绅砷莘神什审婶沈谂甚肾慎渗蜃生声升牲笙甥绳省胜圣盛剩])(?:\s|$)")
-    async def q_nan_shen(self, e: AstrMessageEvent):
-        """/nan shen（及同音字）— 恶搞指令：SNET 震度7 + 全屏地震预警"""
-        import io, base64, random
-        from datetime import datetime, timezone
-        from PIL import Image as PILImage
-
-        # 获取触发者名字
-        try:
-            sender_name = e.get_sender_name() or "未知用户"
-        except Exception:
-            sender_name = "未知用户"
-
-        # ── 1. 执行 S-Net 震度 7 ──
-        try:
-            from .parser.snet import SNET_REAL_COORDS
-            from .message.render.snet_map_renderer import MSIL_SHINDO_TO_RGB
-        except ImportError:
-            from parser.snet import SNET_REAL_COORDS
-            from message.render.snet_map_renderer import MSIL_SHINDO_TO_RGB
-
-        val = 7.0
-        key = round(val * 10)
-        rgb = MSIL_SHINDO_TO_RGB.get(key, (63, 250, 54))
-        stations = [
-            {"name": nm, "lat": lat, "lon": lon, "shindo": val, "rgb": rgb}
-            for nm, (lat, lon) in SNET_REAL_COORDS.items()
-        ]
-        ts_str = datetime.now(timezone.utc).strftime("%Y%m%d%H%M00")
-
-        # 渲染 SNET 图
-        if self._snet_renderer:
-            try:
-                img_path = os.path.join(
-                    self._temp_dir,
-                    f"nanshen_{int(__import__('time').time())}.png",
-                )
-                out = await self._snet_renderer.render(stations, img_path, ts_str)
-                if out and os.path.exists(out):
-                    with open(out, "rb") as f:
-                        b64 = base64.b64encode(f.read()).decode()
-                    try:
-                        os.unlink(out)
-                    except Exception:
-                        pass
-                    yield e.chain_result([
-                        Image.fromBase64(b64),
-                        Plain(f"{sender_name} 正在发布地震预警！M9.0!滚木！"),
-                    ])
-                    return
-            except Exception as ex:
-                logger.warning(f"[nan shen] 渲染异常: {ex}")
-
-        # 渲染失败时纯文本兜底
-        yield e.plain_result(f"{sender_name} 正在发布地震预警！M9.0!滚木！")
 
     # ── BAK 版迁移的缺失快捷指令 ──
 

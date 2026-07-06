@@ -82,12 +82,7 @@ class EventTimeRule(BaseRule):
 # ─── 2. 数据源启用规则 ───
 
 class SourceEnabledRule(BaseRule):
-    """检查数据源是否在配置中启用。
-
-    支持两种模式：
-    1. 组级禁用：data_sources.{组}.enabled = false
-    2. 单个源禁用：data_sources.{组}.{config_key} = false（如 direct_http.cenc_eew）
-    """
+    """检查数据源是否在配置中启用。"""
 
     name = "source_enabled"
 
@@ -96,31 +91,16 @@ class SourceEnabledRule(BaseRule):
         if not isinstance(data_sources, dict):
             return RuleDecision.accept(rule_name=self.name)
 
+        # 从 sources.json 获取 config_group + config_key
+        # 这里简化：直接检查 data_sources 下有没有这个源的开关
         source_id = ctx.source_id
         for group_name, group_cfg in data_sources.items():
-            if not isinstance(group_cfg, dict):
-                continue
-
-            # 模式1：组级 enabled=false → 检查 sources 名单或源 ID 精确匹配
-            if group_cfg.get("enabled", True) is False:
-                sources_in_group = group_cfg.get("sources", [])
-                if isinstance(sources_in_group, list) and source_id in sources_in_group:
-                    return RuleDecision.reject(
-                        f"数据源 {source_id} 已被组 {group_name} 禁用", self.name)
-                if source_id == group_name:
-                    return RuleDecision.reject(
-                        f"数据源 {source_id} 已禁用", self.name)
-
-            # 模式2：组下 individual source toggle（如 direct_http.cenc_eew: false）
-            for s_key, s_val in group_cfg.items():
-                if s_key in ("enabled", "sources", "_comment"):
-                    continue
-                if isinstance(s_val, bool) and s_val is False:
-                    # 匹配方式：config_key 与 source_id 有包含关系
-                    if s_key in source_id or source_id in s_key:
-                        return RuleDecision.reject(
-                            f"数据源 {source_id} 已禁用（{group_name}.{s_key}=false）",
-                            self.name)
+            if isinstance(group_cfg, dict):
+                if group_cfg.get("enabled", True) is False:
+                    # 如果整个组被禁用，组内所有源都禁用
+                    # 需要知道 source 属于哪个组
+                    # 这里由上层（pipeline）在构建 RuleContext 时注入
+                    pass
 
         return RuleDecision.accept(rule_name=self.name)
 
@@ -218,7 +198,7 @@ class EarthquakeThresholdRule(BaseRule):
         "icl_http": "icl_filter",
         "sc_wolfx_eew": "sc_eew_filter", "fj_wolfx_eew": "fj_eew_filter",
         "cq_wolfx_eew": "cq_eew_filter",
-        "cwa_wolfx_http": "cwa_scale_filter",
+        "cwa_wolfx_http": "cwa_scale_filter", "kma_wolfx_http": "kma_eew_filter",
         "sc_wolfx_http": "sc_eew_filter", "fj_wolfx_http": "fj_eew_filter",
         "cq_wolfx_http": "cq_eew_filter",
         # JMA/CWA 震度过滤器
@@ -227,9 +207,6 @@ class EarthquakeThresholdRule(BaseRule):
         "jma_wolfx_http": "jma_scale_filter", "jma_wolfx_info_http": "jma_scale_filter",
         "jma_p2p_http": "jma_scale_filter", "jma_p2p_info_http": "jma_scale_filter",
         "cwa_fanstudio": "cwa_scale_filter", "cwa_wolfx": "cwa_scale_filter",
-        # CENC EEW
-        "cenc_eew_http": "cenc_eew_filter",
-        "cenc_eew_province": "cenc_eew_province_filter",
     }
 
     def evaluate(self, ctx: RuleContext) -> RuleDecision:
@@ -321,7 +298,7 @@ class EarthquakeThresholdRule(BaseRule):
                     min_shindo_val = f.get("min_shindo", 0)
                 shindo = self._get_intensity(ctx)  # JMA/CWA 的 max_intensity = 震度
                 mag_ok = (min_mag <= 0 or (check_mag is None and isinstance(ctx.event, EewEvent)) or (check_mag is not None and check_mag >= min_mag))
-                shindo_ok = (min_shindo_val > 0 and shindo is not None and shindo >= min_shindo_val)
+                shindo_ok = (min_shindo_val <= 0 or (shindo is not None and shindo >= min_shindo_val))
                 if mag_ok or shindo_ok:
                     return RuleDecision.accept(rule_name=self.name)
                 return RuleDecision.reject(
@@ -333,8 +310,7 @@ class EarthquakeThresholdRule(BaseRule):
                 min_int = self._get_field(f, "最小烈度", "烈度", "min_intensity", default=0)
             intensity = self._get_intensity(ctx)
             mag_ok = (min_mag <= 0 or (check_mag is None and isinstance(ctx.event, EewEvent)) or (check_mag is not None and check_mag >= min_mag))
-            # min_int=0 表示未配置烈度阈值，不覆盖震级检查
-            int_ok = (min_int > 0 and intensity is not None and intensity >= min_int)
+            int_ok = (min_int <= 0 or (intensity is not None and intensity >= min_int))
             if mag_ok or int_ok:
                 return RuleDecision.accept(rule_name=self.name)
             return RuleDecision.reject(
@@ -348,7 +324,7 @@ class EarthquakeThresholdRule(BaseRule):
             intensity = self._get_intensity(ctx)
             # OR逻辑：震级够 或 烈度够 即可推送
             mag_ok = (min_mag <= 0 or (check_mag is None and isinstance(ctx.event, EewEvent)) or (check_mag is not None and check_mag >= min_mag))
-            int_ok = (min_int > 0 and intensity is not None and intensity >= min_int)
+            int_ok = (min_int <= 0 or (intensity is not None and intensity >= min_int))
             if mag_ok or int_ok:
                 return RuleDecision.accept(rule_name=self.name)
             return RuleDecision.reject(
@@ -364,7 +340,7 @@ class EarthquakeThresholdRule(BaseRule):
             intensity = self._get_intensity(ctx)
             # OR逻辑：震级够 或 烈度够 即通过
             mag_ok = (min_mag <= 0 or (check_mag is None and isinstance(ctx.event, EewEvent)) or (check_mag is not None and check_mag >= min_mag))
-            int_ok = (min_int > 0 and intensity is not None and intensity >= min_int)
+            int_ok = (min_int <= 0 or (intensity is not None and intensity >= min_int))
             if mag_ok or int_ok:
                 continue  # 当前过滤器通过，继续检查下一个
             return RuleDecision.reject(
@@ -390,7 +366,7 @@ class EarthquakeThresholdRule(BaseRule):
             0.2 * (depth - 10.0),
             0.0
         )
-        cea1 = 1.297 * mag - 4.368 * math.log10(depth + 15.0) + 5.363
+        cea1 = 1.297 * mag - 4.368 * math.log10(15.0) + 5.363
         cea2 = 1.297 * mag - 4.368 * math.log10(hypo_dis + 15.0) + 5.363
         return (cea1 + cea2) / 2.0
 

@@ -20,8 +20,15 @@
   "groups": {
     "description": "📢 群组列表",
     "type": "list",
-    "hint": "每行一个群组标识名（如 sleep_group）。详情（会话/过滤）通过 /灾害预警群组 命令管理。\n示例命令：\n  /灾害预警群组 set sleep_group sessions 群号1,群号2\n  /灾害预警群组 set sleep_group description 睡眠群组\n  /灾害预警群组 detail sleep_group",
+    "hint": "每行一个群组名",
     "default": []
+  },
+  "group_sessions": {
+    "description": "📢 群组会话配置",
+    "type": "object",
+    "hint": "键=群组名，值=会话ID列表",
+    "default": {},
+    "items": {}
   },
   "offline_notification_sessions": {
     "description": "离线通知接收会话列表",
@@ -59,134 +66,112 @@
           "china_earthquake_warning_provincial": {
             "description": "中国地震网地震预警(省级)",
             "type": "bool",
-            "default": false,
-            "condition": "enabled == true"
+            "default": true
           },
           "taiwan_cwa_earthquake": {
             "description": "台湾中央气象署：强震即时警报",
             "type": "bool",
-            "default": false,
-            "condition": "enabled == true"
+            "default": true
           },
           "taiwan_cwa_report": {
             "description": "台湾中央气象署：地震报告",
             "type": "bool",
-            "default": false,
-            "condition": "enabled == true"
+            "default": true
           },
           "china_cenc_earthquake": {
             "description": "中国地震台网（CENC）：地震测定",
             "type": "bool",
-            "default": false,
-            "condition": "enabled == true"
+            "default": true
           },
           "japan_jma_eew": {
             "description": "日本气象厅（JMA）：紧急地震速报",
             "type": "bool",
-            "default": false,
-            "condition": "enabled == true"
+            "default": false
           },
           "usgs_earthquake": {
             "description": "美国地质调查局（USGS）：地震测定",
             "type": "bool",
-            "default": false,
-            "condition": "enabled == true"
+            "default": true
           },
           "china_weather_alarm": {
             "description": "中国气象局：气象预警",
             "type": "bool",
-            "default": false,
-            "condition": "enabled == true"
+            "default": true
           },
           "china_tsunami": {
             "description": "海啸预警信息",
             "type": "bool",
-            "default": false,
-            "condition": "enabled == true"
+            "default": true
           },
           "emsc_earthquake": {
             "description": "EMSC 欧洲地中海地震中心",
             "type": "bool",
-            "default": false,
-            "condition": "enabled == true"
+            "default": false
           },
           "fssn_earthquake": {
             "description": "FAN Studio 自有地震速报",
             "type": "bool",
-            "default": false,
-            "condition": "enabled == true"
+            "default": false
           },
           "kma_earthquake": {
             "description": "KMA 韩国气象厅：地震测定",
             "type": "bool",
-            "default": false,
-            "condition": "enabled == true"
+            "default": false
           },
           "usp_earthquake": {
             "description": "USP 巴西圣保罗大学地震中心",
             "type": "bool",
-            "default": false,
-            "condition": "enabled == true"
+            "default": false
           },
           "gfz_earthquake": {
             "description": "GFZ 德国地学研究中心",
             "type": "bool",
-            "default": false,
-            "condition": "enabled == true"
+            "default": false
           },
           "bcsf_earthquake": {
             "description": "BCSF 法国中央地震研究所",
             "type": "bool",
-            "default": false,
-            "condition": "enabled == true"
+            "default": false
           },
           "hko_earthquake": {
             "description": "香港天文台（HKO）：地震测定",
             "type": "bool",
-            "default": false,
-            "condition": "enabled == true"
+            "default": false
           },
           "ningxia_earthquake": {
             "description": "宁夏地震台网",
             "type": "bool",
-            "default": false,
-            "condition": "enabled == true"
+            "default": false
           },
           "guangxi_earthquake": {
             "description": "广西地震台网",
             "type": "bool",
-            "default": false,
-            "condition": "enabled == true"
+            "default": false
           },
           "shanxi_earthquake": {
             "description": "山西地震台网",
             "type": "bool",
-            "default": false,
-            "condition": "enabled == true"
+            "default": false
           },
           "beijing_earthquake": {
             "description": "北京地震台网",
             "type": "bool",
-            "default": false,
-            "condition": "enabled == true"
+            "default": false
           },
           "yunnan_earthquake": {
             "description": "云南地震台网",
             "type": "bool",
-            "default": false,
-            "condition": "enabled == true"
+            "default": false
           },
           "us_shakealert_eew": {
             "description": "ShakeAlert 美国西海岸地震预警",
             "type": "bool",
-            "default": false,
-            "condition": "enabled == true"
+            "default": false
           },
           "kma_eew": {
             "description": "KMA 韩国气象厅：紧急地震速报",
             "type": "bool",
-            "default": false,
-            "condition": "enabled == true"
+            "default": false
           }
         }
       },
@@ -326,21 +311,6 @@
           },
           "snet": {
             "description": "NIED S-Net 海底震度分布",
-            "type": "bool",
-            "default": false
-          },
-          "cenc_eew": {
-            "description": "CENC 全国 EEW（CEA 全国源）",
-            "type": "bool",
-            "default": false
-          },
-          "cenc_eew_province": {
-            "description": "CENC 省级 EEW（CEA-PR 32省融合源）",
-            "type": "bool",
-            "default": false
-          },
-          "cenc_report": {
-            "description": "CENC 省网正式地震报告（替代 FAN CENC）",
             "type": "bool",
             "default": false
           }
@@ -1406,72 +1376,6 @@
             "description": "最小烈度（中国标准烈度，0-12级）",
             "type": "float",
             "default": 5.0,
-            "slider": {
-              "min": 0,
-              "max": 12,
-              "step": 0.1
-            },
-            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
-          }
-        }
-      },
-      "cenc_eew_filter": {
-        "description": "CEA 全国 EEW 专用过滤器（cenc_eew_http）",
-        "type": "object",
-        "items": {
-          "enabled": {
-            "description": "启用",
-            "type": "bool",
-            "default": true
-          },
-          "min_magnitude": {
-            "description": "最小震级",
-            "type": "float",
-            "default": 3.0,
-            "slider": {
-              "min": 0,
-              "max": 10,
-              "step": 0.1
-            },
-            "hint": "震级大于等于此值时推送"
-          },
-          "最小烈度": {
-            "description": "最小烈度（中国标准烈度，0-12级）",
-            "type": "float",
-            "default": 4.0,
-            "slider": {
-              "min": 0,
-              "max": 12,
-              "step": 0.1
-            },
-            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
-          }
-        }
-      },
-      "cenc_eew_province_filter": {
-        "description": "CEA-PR 省级 EEW 专用过滤器（cenc_eew_province）",
-        "type": "object",
-        "items": {
-          "enabled": {
-            "description": "启用",
-            "type": "bool",
-            "default": true
-          },
-          "min_magnitude": {
-            "description": "最小震级",
-            "type": "float",
-            "default": 3.0,
-            "slider": {
-              "min": 0,
-              "max": 10,
-              "step": 0.1
-            },
-            "hint": "震级大于等于此值时推送"
-          },
-          "最小烈度": {
-            "description": "最小烈度（中国标准烈度，0-12级）",
-            "type": "float",
-            "default": 4.0,
             "slider": {
               "min": 0,
               "max": 12,
@@ -2758,72 +2662,6 @@
               "max": 7.0,
               "step": 0.1
             }
-          }
-        }
-      },
-      "cenc_eew_filter": {
-        "description": "🌙 睡眠CEA 全国 EEW 专用过滤器",
-        "type": "object",
-        "items": {
-          "enabled": {
-            "description": "启用",
-            "type": "bool",
-            "default": true
-          },
-          "min_magnitude": {
-            "description": "最小震级",
-            "type": "float",
-            "default": 3.5,
-            "slider": {
-              "min": 0,
-              "max": 10,
-              "step": 0.1
-            },
-            "hint": "震级大于等于此值时推送"
-          },
-          "最小烈度": {
-            "description": "最小烈度（中国标准烈度，0-12级）",
-            "type": "float",
-            "default": 5.0,
-            "slider": {
-              "min": 0,
-              "max": 12,
-              "step": 0.1
-            },
-            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
-          }
-        }
-      },
-      "cenc_eew_province_filter": {
-        "description": "🌙 睡眠CEA-PR 省级 EEW 专用过滤器",
-        "type": "object",
-        "items": {
-          "enabled": {
-            "description": "启用",
-            "type": "bool",
-            "default": true
-          },
-          "min_magnitude": {
-            "description": "最小震级",
-            "type": "float",
-            "default": 3.5,
-            "slider": {
-              "min": 0,
-              "max": 10,
-              "step": 0.1
-            },
-            "hint": "震级大于等于此值时推送"
-          },
-          "最小烈度": {
-            "description": "最小烈度（中国标准烈度，0-12级）",
-            "type": "float",
-            "default": 5.0,
-            "slider": {
-              "min": 0,
-              "max": 12,
-              "step": 0.1
-            },
-            "hint": "OR逻辑：震级或烈度任一达标即可推送。烈度为震中预估烈度"
           }
         }
       },

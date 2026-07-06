@@ -287,18 +287,16 @@ class CsncParser(BaseParser):
         br_m = re.search(r'<br\s*/?>\s*([^<]*)', td0, re.DOTALL | re.IGNORECASE)
         place = br_m.group(1).strip() if br_m else ""
         depth_m = re.search(r'([\d.]+)', tds[1].strip())
+        depth = depth_m.group(1) if depth_m else "0"
         mag = tds[2].strip()
-        magnitude = to_float(mag)
-        if magnitude is None:
-            return None
         occurred_at = self._parse_chile_time(time_str)
         if not occurred_at:
             return None
         eid = report_id or f"csnc_{occurred_at.strftime('%Y%m%d%H%M%S')}"
         event = EarthquakeReport(
             source_id=self.source_id, event_id=eid,
-            occurred_at=occurred_at, depth=to_float(depth_m.group(1) if depth_m else None),
-            magnitude=magnitude, place_name=place, raw={"report_url": href},
+            occurred_at=occurred_at, depth=to_float(depth),
+            magnitude=to_float(mag), place_name=place, raw={"report_url": href},
         )
         return EventEnvelope(
             identity=EventIdentity(event_id=eid, source_id=self.source_id, event_type="earthquake"),
@@ -367,15 +365,12 @@ class PhivolcsParser(BaseParser):
         occurred_at = self._parse_ph_time(time_str)
         if not occurred_at:
             return None
-        magnitude = to_float(mag_m.group(1) if mag_m else None)
-        if magnitude is None:
-            return None
         eid = report_id or f"phivolcs_{occurred_at.strftime('%Y%m%d%H%M%S')}"
         event = EarthquakeReport(
             source_id=self.source_id, event_id=eid,
             occurred_at=occurred_at, latitude=lat, longitude=lon,
-            depth=to_float(depth_m.group(1) if depth_m else None),
-            magnitude=magnitude,
+            depth=to_float(depth_m.group(1) if depth_m else "0"),
+            magnitude=to_float(mag_m.group(1) if mag_m else "0"),
             place_name=loc, raw={"report_url": href},
         )
         return EventEnvelope(
@@ -436,9 +431,7 @@ class TmdParser(BaseParser):
             return None
         time_str = t_m.group(1)
         mag_m = re.search(r'([\d.]+)', tds[1].strip())
-        magnitude = to_float(mag_m.group(1) if mag_m else None)
-        if magnitude is None:
-            return None
+        mag = mag_m.group(1) if mag_m else "0"
         lat_raw = tds[2].strip()
         lat_v = to_float(re.search(r'([\d.]+)', lat_raw).group(1)) if re.search(r'([\d.]+)', lat_raw) else None
         if lat_v is not None and "S" in lat_raw:
@@ -448,6 +441,7 @@ class TmdParser(BaseParser):
         if lon_v is not None and "W" in lon_raw:
             lon_v = -lon_v
         depth_m = re.search(r'([\d.]+)', tds[4].strip())
+        depth = depth_m.group(1) if depth_m else "0"
         fonts = re.findall(r'<font[^>]*>\s*(.*?)\s*</font>', tds[5], re.DOTALL)
         region_en = re.sub(r'<[^>]+>', '', fonts[1]).strip() if len(fonts) >= 2 else ""
         try:
@@ -458,8 +452,7 @@ class TmdParser(BaseParser):
         event = EarthquakeReport(
             source_id=self.source_id, event_id=eid,
             occurred_at=occurred_at, latitude=lat_v, longitude=lon_v,
-            depth=to_float(depth_m.group(1) if depth_m else None),
-            magnitude=magnitude,
+            depth=to_float(depth), magnitude=to_float(mag),
             place_name=region_en, raw={"report_id": report_id},
         )
         return EventEnvelope(

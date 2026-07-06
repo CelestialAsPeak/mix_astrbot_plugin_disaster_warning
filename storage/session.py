@@ -36,14 +36,17 @@ class SessionConfigManager:
     # 群组可覆盖的字段白名单
     ALLOWED_KEYS = {"earthquake_filters", "message_format", "enabled"}
 
-    def __init__(self, global_config: dict[str, Any] | None = None):
+    def __init__(self, global_config: dict[str, Any] | None = None, storage_path: str | Path | None = None):
         self.global_config = global_config or {}
         self._overrides: dict[str, dict[str, Any]] = {}
+        self._storage_path_override = Path(storage_path) if storage_path else None
         self._load()
 
     # ── 持久化 ──
 
     def _storage_dir(self) -> Path:
+        if self._storage_path_override:
+            return self._storage_path_override
         try:
             return StarTools.get_data_dir("mix_astrbot_plugin_disaster_warning")
         except Exception:
@@ -79,44 +82,28 @@ class SessionConfigManager:
     # ── 群组查询 ──
 
     def list_groups(self) -> dict[str, dict[str, Any]]:
-        """返回所有群组配置（{group_id: {sessions, ...}}）。
-
-        groups 配置支持三种格式：
-        - list (新): ["group_a", "group_b"] — 群组名列表，详情从 overrides 读取
-        - dict (旧格式自动迁移): {"group_a": {sessions:...}, ...}
-        """
+        """返回所有群组配置（{group_id: {sessions, ...}}）。"""
         raw = self.global_config.get("groups", {})
+        logger.info(f"[Session] list_groups raw type={type(raw).__name__} value={raw!r}")
         groups: dict[str, dict[str, Any]] = {}
 
         if isinstance(raw, list):
-            # 新格式：群组名列表 → 从 overrides 读取详情
+            # list 格式：群组名列表 → 从 group_sessions 读取会话
+            _sessions_map = self.global_config.get("group_sessions", {})
+            if not isinstance(_sessions_map, dict):
+                _sessions_map = {}
             for gid in raw:
                 gid = str(gid).strip()
                 if gid:
-                    override = self._overrides.get(gid, {})
-                    # 有 override 就用 override，没有就是空壳
-                    base = dict(override)
-                    groups[gid] = base
+                    ss = _sessions_map.get(gid, [])
+                    groups[gid] = {"sessions": list(ss) if isinstance(ss, list) else []}
         elif isinstance(raw, dict):
-            # 旧格式 dict 迁移：把 sessions/description 写入 overrides
+            # dict 格式：直接读取
             for gid, gcfg in raw.items():
                 gid = str(gid)
-                gcfg_dict = dict(gcfg) if isinstance(gcfg, dict) else {}
-                groups[gid] = gcfg_dict
-                # 只迁移 sessions + description（earthquake_filters 归 overrides 管）
-                to_migrate = {}
-                for k in ("sessions", "description"):
-                    if k in gcfg_dict:
-                        to_migrate[k] = gcfg_dict[k]
-                if to_migrate:
-                    existing = self._overrides.get(gid, {})
-                    changed = False
-                    for k, v in to_migrate.items():
-                        existing.setdefault(k, v)
-                    self._overrides[gid] = existing
-                    self._save()
+                groups[gid] = dict(gcfg) if isinstance(gcfg, dict) else {}
         else:
-            # 兜底
+            # 兜底：target_sessions → default 群组
             sessions = self.global_config.get("target_sessions", [])
             if isinstance(sessions, list) and sessions:
                 groups["default"] = {"sessions": list(sessions)}

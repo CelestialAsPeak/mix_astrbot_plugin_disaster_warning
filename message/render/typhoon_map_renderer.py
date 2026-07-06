@@ -267,7 +267,7 @@ class TyphoonMapRenderer:
                 output_path,
                 selector="#card-wrapper",
                 viewport={"width": 1600, "height": 1200},
-                wait_until="networkidle",
+                wait_until="domcontentloaded",
             )
             if result and os.path.exists(output_path):
                 logger.info(f"[台风] 路径图已生成 ({os.path.getsize(output_path)} bytes): {output_path}")
