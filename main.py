@@ -85,6 +85,8 @@ from .parser.http_poll import cenc_report  # noqa: F401 — CENC 报告 Plan B
 from .parser.typhoon import cma as typhoon_cma, jma as typhoon_jma
 from .services.cenc_eew_plan_b import CencEewPlanB, _CENC_SHORT_NAME, _CENC_PROVINCES, _CENC_BASE
 
+import aiohttp
+
 
 # ── 来源简写映射（供查询命令共享） ──
 
