@@ -136,23 +136,13 @@ def _fmt_time_short(ts: str | None) -> str:
     return s[5:] if len(s) > 10 else s
 
 
-def _render_intensity_images(renderer, magnitude: float | None, depth: float | None) -> list[bytes]:
-    """渲染烈度震度双图，返回 bytes 列表。"""
-    import os
+def _render_intensity_images(renderer, magnitude: float | None, depth: float | None) -> list[str]:
+    """渲染烈度震度双图，返回文件路径列表。"""
     if renderer is None or magnitude is None:
         return []
     try:
         s_path, i_path = renderer.render_both(magnitude, depth)
-        result = []
-        for p in (s_path, i_path):
-            if p and os.path.exists(p):
-                with open(p, "rb") as f:
-                    result.append(f.read())
-                try:
-                    os.unlink(p)
-                except Exception:
-                    pass
-        return result
+        return [p for p in (s_path, i_path) if p]
     except Exception as ex:
         logger.warning(f"[双图] 渲染异常: {ex}")
         return []
