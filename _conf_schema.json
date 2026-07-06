@@ -313,6 +313,21 @@
             "description": "NIED S-Net 海底震度分布",
             "type": "bool",
             "default": false
+          },
+          "cenc_eew": {
+            "description": "CEA 全国 EEW（Plan B，FAN 失效时用）",
+            "type": "bool",
+            "default": false
+          },
+          "cenc_eew_province": {
+            "description": "CEA-PR 32省 EEW（Plan B，FAN 失效时用）",
+            "type": "bool",
+            "default": false
+          },
+          "cenc_report": {
+            "description": "CENC 全国地震报告（Plan B，FAN 失效时用）",
+            "type": "bool",
+            "default": false
           }
         }
       },

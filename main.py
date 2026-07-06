@@ -134,29 +134,26 @@ def _fmt_time_short(ts: str | None) -> str:
     return s[5:] if len(s) > 10 else s
 
 
-def _format_cea_event(r: dict) -> str:
-    """格式化 CEA EEW 事件行 → 文本。"""
-    mag = r.get("magnitude", "?")
-    place = r.get("place_name", r.get("description", ""))
-    depth = r.get("depth", "?")
-    lat = r.get("latitude")
-    lon = r.get("longitude")
-    time_str = _fmt_time_short(r.get("time", ""))
-    mmi = r.get("mmi") or r.get("max_intensity", "")
-    lines = [
-        "[CEA(CAPQHT)/中国地震预警网 地震预警]",
-        _SEPARATOR,
-        _field("震中", place),
-        _field("震级", f"M{mag}"),
-        _field("深度", f"{depth} km" if depth and depth != "?" else "?"),
-        _field("发震时间", time_str),
-    ]
-    if lat is not None and lon is not None:
-        lines.append(_field("经纬度", f"{abs(float(lon)):.2f}{'E' if float(lon) >= 0 else 'W'} {abs(float(lat)):.2f}{'N' if float(lat) >= 0 else 'S'}"))
-    if mmi:
-        lines.append(_field("预估烈度", mmi))
-    lines.append(_SEPARATOR)
-    return "\n".join(lines)
+def _render_intensity_images(renderer, magnitude: float | None, depth: float | None) -> list[bytes]:
+    """渲染烈度震度双图，返回 bytes 列表。"""
+    import os
+    if renderer is None or magnitude is None:
+        return []
+    try:
+        s_path, i_path = renderer.render_both(magnitude, depth)
+        result = []
+        for p in (s_path, i_path):
+            if p and os.path.exists(p):
+                with open(p, "rb") as f:
+                    result.append(f.read())
+                try:
+                    os.unlink(p)
+                except Exception:
+                    pass
+        return result
+    except Exception as ex:
+        logger.warning(f"[双图] 渲染异常: {ex}")
+        return []
 
 
 # ── 源 → 显示名映射 ──
@@ -546,8 +543,12 @@ class MixDisasterWarningPlugin(Star):
                 pipeline=self.pipeline,
                 signal_bus=self.signal_bus,
             )
-            # Plan B 默认不启动轮询，由外部控制（FAN 状态 / /cea 命令自动启用）
-            # 查询命令 (/cea /cenc) 始终可用
+            # 根据配置开关自动启停
+            ds = dict(self.config).get("data_sources", {})
+            dh = ds.get("direct_http", {}) if isinstance(ds, dict) else {}
+            pb_enabled = dh.get("cenc_eew", False) or dh.get("cenc_eew_province", False) or dh.get("cenc_report", False)
+            if pb_enabled:
+                asyncio.create_task(self.plan_b.start())
 
             self._setup_done = True
             logger.info("[Mix] 初始化完成")
@@ -2060,43 +2061,127 @@ class MixDisasterWarningPlugin(Star):
             yield e.plain_result("❌ Plan B 未初始化")
             return
 
-        # ── /cea pr → 各省概览 ──
+        # ── /cea pr → 各省概览（Nodes 聊天记录） ──
         if args == "pr":
-            rows = await plan_b.query_all_provinces()
-            if not rows:
-                yield e.plain_result("📡 暂无省网数据")
-                return
-            nodes = []
-            for r in rows:
-                raw = r.get("raw", {}) or {}
-                if isinstance(raw, str):
-                    try: import json; raw = json.loads(raw)
-                    except: raw = {}
-                app_id = raw.get("app_id", "")
-                province = _CENC_SHORT_NAME.get(app_id, "未知")
-                mag = r.get("magnitude", "?")
-                place = (r.get("place_name", "") or r.get("description", "") or "")[:15]
-                t = _fmt_time_short(r.get("time", ""))
-                nodes.append(f"  {province} M{mag} {place} ({t})")
-            yield e.plain_result("📡 省网 EEW 概览:\n" + "\n".join(nodes))
+            db_count = 0
+            if self.database:
+                try:
+                    rows = await self.database.execute_raw(
+                        "SELECT COUNT(*) as c FROM events WHERE source='cenc_eew_province'"
+                    )
+                    db_count = rows[0]["c"] if rows else 0
+                except Exception:
+                    pass
+            from datetime import datetime
+            now_str = datetime.now().strftime("%m-%d %H:%M")
+            from astrbot.api.message_components import Node, Nodes
+            bot_id = e.get_self_id() or "0"
+            bot_name = "Mix灾害预警"
+            nodes = Nodes([])
+            header = (
+                f"CEA-PR 中国地震预警网 省级融合源 最新数据\n"
+                f"省份: {len(_CENC_PROVINCES)} | 入库: {db_count} | {now_str}"
+            )
+            nodes.nodes.append(Node(uin=bot_id, name=bot_name, content=[Plain(header)]))
+
+            async with aiohttp.ClientSession() as session:
+                for name, app_id in _CENC_PROVINCES:
+                    short = _CENC_SHORT_NAME.get(app_id, name.replace("地震预警网", ""))
+                    payload = {"app_id": app_id, "page_query": {"page_no": 1, "page_size": 10}}
+                    try:
+                        async with session.post(
+                            f"{_CENC_BASE}/api/earthquake/event/v1/list",
+                            json=payload, timeout=10
+                        ) as resp:
+                            if resp.status != 200:
+                                nodes.nodes.append(Node(uin=bot_id, name=bot_name, content=[Plain(f"✗ {short} HTTP{resp.status}")]))
+                                continue
+                            data = await resp.json()
+                            if data.get("code") != 0:
+                                nodes.nodes.append(Node(uin=bot_id, name=bot_name, content=[Plain(f"✗ {short} {data.get('msg','?')}")]))
+                                continue
+                            infos = (data.get("data") or {}).get("spot_infos", [])
+                            if not infos:
+                                nodes.nodes.append(Node(uin=bot_id, name=bot_name, content=[Plain(f"- {short} 无数据")]))
+                                continue
+                            eq = infos[0]
+                            ts = datetime.fromtimestamp(eq.get("created_at", 0) / 1000).strftime("%m-%d %H:%M") if eq.get("created_at") else "?"
+                            mag = eq.get("level", "?")
+                            dep = eq.get("depth", "?")
+                            loc = (eq.get("location") or "?")[:16]
+                            epi = eq.get("epicenter_intensity")
+                            epi_s = f"烈度{epi}" if epi is not None else "烈度不明"
+                            serial = eq.get("serial_number")
+                            serial_s = f" 第{serial}报" if serial else ""
+                            lat, lon = eq.get("latitude"), eq.get("longitude")
+                            lat_s = f"{abs(lat):.3f}{'N' if lat is not None and lat >= 0 else 'S'}" if lat is not None else "?"
+                            lon_s = f"{abs(lon):.3f}{'E' if lon is not None and lon >= 0 else 'W'}" if lon is not None else "?"
+                            eid = str(eq.get("id", "?"))[-12:]
+                            node_text = (
+                                f"{short}地震预警网{serial_s}\n"
+                                f"时间: {ts} 震中: {loc}\n"
+                                f"震级: M{mag} 深度: {dep}km\n"
+                                f"经纬度: {lon_s} {lat_s} | {epi_s}\n"
+                                f"ID: {eid}"
+                            )
+                            nodes.nodes.append(Node(uin=bot_id, name=bot_name, content=[Plain(node_text)]))
+                    except Exception as ex:
+                        nodes.nodes.append(Node(uin=bot_id, name=bot_name, content=[Plain(f"✗ {short} {str(ex)[:30]}")]))
+            yield e.chain_result([nodes])
             return
 
-        # ── /cea <省份> → 查某省 ──
+        # ── /cea <省名> → 实时抓取 + present_eew + 双图 ──
         if args and args != "cea":
-            rows = await plan_b.query_province(args, 3)
-            if not rows:
-                yield e.plain_result(f"📡 暂无 {args} 数据")
+            matched_app_id = None
+            matched_name = None
+            for name, app_id in _CENC_PROVINCES:
+                if args in name or args in _CENC_SHORT_NAME.get(app_id, ""):
+                    matched_app_id = app_id
+                    matched_name = _CENC_SHORT_NAME.get(app_id, name)
+                    break
+            if not matched_app_id:
+                yield e.plain_result(f"❌ 未找到省份: {args}")
                 return
-            r = rows[0]
-            text = _format_cea_event(r)
+
+            url = f"{_CENC_BASE}/api/earthquake/event/v1/list"
+            payload = {"app_id": matched_app_id, "page_query": {"page_no": 1, "page_size": 10}}
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(url, json=payload, timeout=10) as resp:
+                        if resp.status != 200:
+                            yield e.plain_result(f"❌ {matched_name} HTTP {resp.status}")
+                            return
+                        data = await resp.json()
+            except Exception as ex:
+                yield e.plain_result(f"❌ {matched_name} 请求失败: {ex}")
+                return
+
+            parser = ParserRegistry.get("cenc_eew_province")
+            result = parser.parse_message(data) if parser else None
+            if not result:
+                yield e.plain_result(f"📡 {matched_name} 暂无 EEW 数据")
+                return
+            envelopes = result if isinstance(result, list) else [result]
+            if not envelopes:
+                yield e.plain_result(f"📡 {matched_name} 暂无 EEW 数据")
+                return
+            ev = envelopes[0].event
+
+            text = present_eew(ev)
+            province_display = _CENC_SHORT_NAME.get(matched_app_id, matched_name)
+            if province_display:
+                import re as _re
+                lines = text.split("\n")
+                lines[0] = _re.sub(r"(中国地震预警网省级融合源)(\s)", rf"\1({province_display})\2", lines[0])
+                text = "\n".join(lines)
+
             yield e.plain_result(text)
-            # 烈度图（EEW 不渲染地图，速度优先）
-            img = await self._cea_intensity_image(r)
-            if img:
+            imgs = _render_intensity_images(self._intensity_img_renderer, ev.magnitude, ev.depth)
+            for img in imgs:
                 yield e.image_result(img)
             return
 
-        # ── /cea → 查全国源最新 EEW（单条 + 烈度图） ──
+        # ── /cea → 查全国源最新 EEW（present_eew + 烈度震度双图） ──
         rows = await plan_b.query_national(5)
         if not rows:
             yield e.plain_result("📡 正在首次抓取...")
@@ -2106,29 +2191,33 @@ class MixDisasterWarningPlugin(Star):
             yield e.plain_result("📡 暂无 CEA 数据")
             return
         r = rows[0]
-        text = _format_cea_event(r)
+        ts = r.get("time") or ""
+        occurred_at = None
+        if ts:
+            try:
+                occurred_at = datetime.fromisoformat(ts)
+            except (ValueError, TypeError):
+                try:
+                    occurred_at = datetime.strptime(ts[:19].replace("T", " "), "%Y-%m-%d %H:%M:%S")
+                except (ValueError, TypeError):
+                    pass
+        eew = EewEvent(
+            source_id="cenc_eew_http",
+            event_id=r.get("real_event_id", "") or str(r.get("id", "")),
+            occurred_at=occurred_at,
+            latitude=r.get("latitude"),
+            longitude=r.get("longitude"),
+            depth=r.get("depth"),
+            magnitude=r.get("magnitude"),
+            place_name=r.get("place_name") or "",
+            report_num=r.get("report_num", 0) or 0,
+            raw=r.get("raw", {}),
+        )
+        text = present_eew(eew)
         yield e.plain_result(text)
-        img = await self._cea_intensity_image(r)
-        if img:
+        imgs = _render_intensity_images(self._intensity_img_renderer, eew.magnitude, eew.depth)
+        for img in imgs:
             yield e.image_result(img)
-
-    async def _cea_intensity_image(self, r: dict) -> str | None:
-        """CEA EEW 烈度图（无地图，速度快）。"""
-        renderer = getattr(self, "_intensity_img_renderer", None)
-        if renderer is None:
-            return None
-        try:
-            mmi = r.get("mmi") or r.get("max_intensity", "")
-            if mmi:
-                return renderer.render_intensity_actual(str(mmi), "最大烈度")
-            # 没烈度时用 CSIS 估算
-            mag = r.get("magnitude")
-            depth = r.get("depth")
-            if mag is not None and depth is not None:
-                return renderer.render_intensity(float(mag), float(depth))
-        except Exception as e:
-            logger.debug(f"[CEA] 烈度图渲染失败: {e}")
-        return None
 
     @filter.regex(r"^/jma(?:\s|$)")
     async def q_jma(self, e):
