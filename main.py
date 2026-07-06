@@ -2085,7 +2085,9 @@ class MixDisasterWarningPlugin(Star):
             nodes.nodes.append(Node(uin=bot_id, name=bot_name, content=[Plain(header)]))
 
             async with aiohttp.ClientSession() as session:
-                for name, app_id in _CENC_PROVINCES:
+
+                async def _fetch_province(name: str, app_id: str) -> Node | None:
+                    """单个省请求（并行用）。"""
                     short = _CENC_SHORT_NAME.get(app_id, name.replace("地震预警网", ""))
                     payload = {"app_id": app_id, "page_query": {"page_no": 1, "page_size": 10}}
                     try:
@@ -2094,16 +2096,13 @@ class MixDisasterWarningPlugin(Star):
                             json=payload, timeout=10
                         ) as resp:
                             if resp.status != 200:
-                                nodes.nodes.append(Node(uin=bot_id, name=bot_name, content=[Plain(f"✗ {short} HTTP{resp.status}")]))
-                                continue
+                                return Node(uin=bot_id, name=bot_name, content=[Plain(f"✗ {short} HTTP{resp.status}")])
                             data = await resp.json()
                             if data.get("code") != 0:
-                                nodes.nodes.append(Node(uin=bot_id, name=bot_name, content=[Plain(f"✗ {short} {data.get('msg','?')}")]))
-                                continue
+                                return Node(uin=bot_id, name=bot_name, content=[Plain(f"✗ {short} {data.get('msg','?')}")])
                             infos = (data.get("data") or {}).get("spot_infos", [])
                             if not infos:
-                                nodes.nodes.append(Node(uin=bot_id, name=bot_name, content=[Plain(f"- {short} 无数据")]))
-                                continue
+                                return Node(uin=bot_id, name=bot_name, content=[Plain(f"- {short} 无数据")])
                             eq = infos[0]
                             ts = datetime.fromtimestamp(eq.get("created_at", 0) / 1000).strftime("%m-%d %H:%M") if eq.get("created_at") else "?"
                             mag = eq.get("level", "?")
@@ -2124,9 +2123,15 @@ class MixDisasterWarningPlugin(Star):
                                 f"经纬度: {lon_s} {lat_s} | {epi_s}\n"
                                 f"ID: {eid}"
                             )
-                            nodes.nodes.append(Node(uin=bot_id, name=bot_name, content=[Plain(node_text)]))
+                            return Node(uin=bot_id, name=bot_name, content=[Plain(node_text)])
                     except Exception as ex:
-                        nodes.nodes.append(Node(uin=bot_id, name=bot_name, content=[Plain(f"✗ {short} {str(ex)[:30]}")]))
+                        return Node(uin=bot_id, name=bot_name, content=[Plain(f"✗ {short} {str(ex)[:30]}")])
+
+                tasks = [_fetch_province(n, a) for n, a in _CENC_PROVINCES]
+                results = await asyncio.gather(*tasks)
+                for node in results:
+                    if node:
+                        nodes.nodes.append(node)
             yield e.chain_result([nodes])
             return
 
