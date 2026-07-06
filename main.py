@@ -2173,7 +2173,6 @@ class MixDisasterWarningPlugin(Star):
                 lines[0] = _re.sub(r"(中国地震预警网省级融合源)(\s)", rf"\1({province_display})\2", lines[0])
                 text = "\n".join(lines)
 
-            yield e.plain_result(text)
             imgs = _render_intensity_images(self._intensity_img_renderer, ev.magnitude, ev.depth)
             if imgs:
                 from astrbot.api.message_components import Image as AstrImage
