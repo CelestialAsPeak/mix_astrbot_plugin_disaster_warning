@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import time
 import traceback
+from datetime import timezone, timedelta
 from typing import Any
 
 try:
@@ -21,6 +22,9 @@ try:
     from ..utils.time import parse_ts
 except ImportError:
     from utils.time import parse_ts
+
+_CST = timezone(timedelta(hours=8))   # 中国标准时间 / 台湾标准时间 (UTC+8)
+_JST = timezone(timedelta(hours=9))   # 日本标准时间 (UTC+9)
 
 
 class BaseParser:
@@ -121,8 +125,12 @@ class BaseParser:
 
     # ── 辅助方法 ──
 
-    def _parse_datetime(self, time_str: Any) -> Any:
-        """解析时间（防御非字符串输入，支持 epoch 数字）。"""
+    def _parse_datetime(self, time_str: Any, tz: timezone | None = None) -> Any:
+        """解析时间（防御非字符串输入，支持 epoch 数字）。
+
+        若 tz 指定且解析结果为 naive datetime，自动附加时区信息。
+        FAN Studio 各数据源传对应时区：CWA/CEA/CENC 传 _CST，JMA 传 _JST。
+        """
         if isinstance(time_str, (int, float)):
             return parse_ts(time_str)
         if not isinstance(time_str, str):
@@ -130,7 +138,13 @@ class BaseParser:
         dt = parse_ts(time_str)
         if dt is None and time_str:
             logger.warning(f"[{self.source_id}] 时间解析失败: '{time_str}'")
+        if dt is not None and dt.tzinfo is None and tz is not None:
+            dt = dt.replace(tzinfo=tz)
         return dt
+
+    def _parse_datetime_cst(self, time_str: Any) -> Any:
+        """解析时间并标记为 UTC+8 (CST)，适用于 FAN Studio 非 JMA 源。"""
+        return self._parse_datetime(time_str, tz=_CST)
 
     def _log_once(self, key: str, msg: str) -> None:
         """1 小时内相同的警告只输出一次。"""

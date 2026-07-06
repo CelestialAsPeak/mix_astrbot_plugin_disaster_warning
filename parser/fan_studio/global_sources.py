@@ -38,7 +38,7 @@ class FanEarthquakeParser(BaseParser):
         if not event_id:
             return None
 
-        occurred_at = self._parse_datetime(
+        occurred_at = self._parse_datetime_cst(
             raw.get("time") or raw.get("occurred_at") or raw.get("originTime") or raw.get("shockTime") or ""
         )
         place_name = str(raw.get("placeName", raw.get("region", "")) or "")

@@ -35,7 +35,7 @@ class FanEewParser(BaseParser):
         if not event_id:
             return None
 
-        occurred_at = self._parse_datetime(raw.get("originTime", raw.get("shockTime", "")))
+        occurred_at = self._parse_datetime_cst(raw.get("originTime", raw.get("shockTime", "")))
         report_num = to_int(raw.get("reportNum", raw.get("updates", 1))) or 1
 
         event = EewEvent(

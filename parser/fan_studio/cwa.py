@@ -37,7 +37,7 @@ class CWAEEWParser(BaseParser):
         if not event_id:
             return None
 
-        occurred_at = self._parse_datetime(raw.get("shockTime", ""))
+        occurred_at = self._parse_datetime_cst(raw.get("shockTime", ""))
         report_num = to_int(raw.get("updates", 1)) or 1
 
         event = EewEvent(
@@ -82,7 +82,7 @@ class CWAReportParser(BaseParser):
         if not event_id:
             return None
 
-        occurred_at = self._parse_datetime(raw.get("time") or raw.get("occurred_at") or raw.get("shockTime") or "")
+        occurred_at = self._parse_datetime_cst(raw.get("time") or raw.get("occurred_at") or raw.get("shockTime") or "")
 
         # CWA maxIntensity: "3級" → mmi float (3.0)
         max_intensity_str = str(raw.get("maxIntensity", "") or "")

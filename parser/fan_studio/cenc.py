@@ -36,7 +36,7 @@ class CencReportParser(BaseParser):
         if not event_id:
             return None
 
-        occurred_at = self._parse_datetime(raw.get("occurred_at") or raw.get("time") or raw.get("shockTime") or "")
+        occurred_at = self._parse_datetime_cst(raw.get("occurred_at") or raw.get("time") or raw.get("shockTime") or "")
         place_name = str(raw.get("placeName", raw.get("location", "")) or "")
         magnitude = to_float(raw.get("magnitude"))
 

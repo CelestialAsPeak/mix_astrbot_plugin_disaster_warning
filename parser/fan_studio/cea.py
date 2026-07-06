@@ -48,7 +48,7 @@ class CEAEEWParser(BaseParser):
             return None
 
         # 时间
-        occurred_at = self._parse_datetime(data.get("shockTime", ""))
+        occurred_at = self._parse_datetime_cst(data.get("shockTime", ""))
 
         # 报次
         try:

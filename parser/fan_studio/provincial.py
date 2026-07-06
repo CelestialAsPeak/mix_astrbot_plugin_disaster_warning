@@ -35,7 +35,7 @@ class ProvincialReportParser(BaseParser):
         if not event_id:
             return None
 
-        occurred_at = self._parse_datetime(raw.get("time") or raw.get("occurred_at") or raw.get("shockTime") or "")
+        occurred_at = self._parse_datetime_cst(raw.get("time") or raw.get("occurred_at") or raw.get("shockTime") or "")
 
         event = EarthquakeReport(
             source_id=self.source_id,

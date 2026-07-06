@@ -36,7 +36,7 @@ class WeatherParser(BaseParser):
         if not event_id:
             return None
 
-        effective_time = self._parse_datetime(raw.get("effectiveTime", raw.get("time", "")))
+        effective_time = self._parse_datetime_cst(raw.get("effectiveTime", raw.get("time", "")))
 
         event = WeatherEvent(
             source_id=self.source_id,

@@ -41,7 +41,7 @@ class TsunamiParser(BaseParser):
             time_str = str(time_info.get("alarmDate", time_info.get("updateDate", "")))
         else:
             time_str = str(time_info) if time_info else ""
-        timestamp = self._parse_datetime(time_str)
+        timestamp = self._parse_datetime_cst(time_str)
         level = to_int(raw.get("level")) or 0
 
         event = TsunamiEvent(

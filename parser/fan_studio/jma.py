@@ -13,13 +13,13 @@ except ImportError:
     from domain.models import EewEvent, EarthquakeReport, EventEnvelope, EventIdentity, SourcePayload
 
 try:
-    from ..base import BaseParser
+    from ..base import BaseParser, _JST
     from ..registry import ParserRegistry
     from ...utils.convert import to_float, to_int, to_str
     from ...utils.time import parse_jst_time
 
 except ImportError:
-    from parser.base import BaseParser
+    from parser.base import BaseParser, _JST
     from parser.registry import ParserRegistry
     from utils.convert import to_float, to_int, to_str
     from utils.time import parse_jst_time
@@ -39,8 +39,8 @@ class JMAEEWParser(BaseParser):
             return None
 
         # FAN Studio API 文档: shockTime = UTC+9, createTime = UTC+9
-        occurred_at = parse_jst_time(raw.get("shockTime", "")) or self._parse_datetime(raw.get("shockTime", ""))
-        announced_time = parse_jst_time(raw.get("createTime", "")) or self._parse_datetime(raw.get("createTime", ""))
+        occurred_at = parse_jst_time(raw.get("shockTime", "")) or self._parse_datetime(raw.get("shockTime", ""), tz=_JST)
+        announced_time = parse_jst_time(raw.get("createTime", "")) or self._parse_datetime(raw.get("createTime", ""), tz=_JST)
         report_num = to_int(raw.get("updates", 1)) or 1
 
         # FAN Studio API 字段对照:
