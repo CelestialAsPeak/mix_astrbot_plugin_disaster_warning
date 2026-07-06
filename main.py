@@ -2069,7 +2069,7 @@ class MixDisasterWarningPlugin(Star):
             now_str = datetime.now().strftime("%m-%d %H:%M")
             from astrbot.api.message_components import Node, Nodes
             bot_id = e.get_self_id() or "0"
-            bot_name = "Mix灾害预警"
+            bot_name = "夜幕百里"
             nodes = Nodes([])
             header = (
                 f"CEA-PR 中国地震预警网 省级融合源 最新数据\n"
