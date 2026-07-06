@@ -83,7 +83,7 @@ from .parser.http_poll import icl_parser  # noqa: F401 — ICL 注册
 from .parser.http_poll import cenc_eew  # noqa: F401 — CEA EEW Plan B
 from .parser.http_poll import cenc_report  # noqa: F401 — CENC 报告 Plan B
 from .parser.typhoon import cma as typhoon_cma, jma as typhoon_jma
-from .services.cenc_eew_plan_b import CencEewPlanB, _CENC_SHORT_NAME
+from .services.cenc_eew_plan_b import CencEewPlanB, _CENC_SHORT_NAME, _CENC_PROVINCES, _CENC_BASE
 
 
 # ── 来源简写映射（供查询命令共享） ──
