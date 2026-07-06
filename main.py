@@ -1026,6 +1026,8 @@ class MixDisasterWarningPlugin(Star):
             handler = entry.get("connection_handler", "")
             if handler == "http_poll":
                 continue  # HTTP 轮询源不走 WS 连接
+            if handler == "p2p":
+                continue  # P2P WS 已废弃（429 Too Many Requests），保留 HTTP 备用
             if handler and url:
                 key = entry.get("connection_group", handler)
                 if key not in groups:
