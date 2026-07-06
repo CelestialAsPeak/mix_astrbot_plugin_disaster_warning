@@ -2175,8 +2175,11 @@ class MixDisasterWarningPlugin(Star):
 
             yield e.plain_result(text)
             imgs = _render_intensity_images(self._intensity_img_renderer, ev.magnitude, ev.depth)
-            for img in imgs:
-                yield e.image_result(img)
+            if imgs:
+                from astrbot.api.message_components import Image as AstrImage
+                yield e.chain_result([Plain(text)] + [AstrImage(file=p) for p in imgs])
+            else:
+                yield e.plain_result(text)
             return
 
         # ── /cea → 查全国源最新 EEW（present_eew + 烈度震度双图） ──
@@ -2212,10 +2215,12 @@ class MixDisasterWarningPlugin(Star):
             raw=r.get("raw", {}),
         )
         text = present_eew(eew)
-        yield e.plain_result(text)
         imgs = _render_intensity_images(self._intensity_img_renderer, eew.magnitude, eew.depth)
-        for img in imgs:
-            yield e.image_result(img)
+        if imgs:
+            from astrbot.api.message_components import Image as AstrImage
+            yield e.chain_result([Plain(text)] + [AstrImage(file=p) for p in imgs])
+        else:
+            yield e.plain_result(text)
 
     @filter.regex(r"^/jma(?:\s|$)")
     async def q_jma(self, e):
