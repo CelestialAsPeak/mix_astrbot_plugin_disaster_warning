@@ -159,53 +159,6 @@ def _format_cea_event(r: dict) -> str:
     return "\n".join(lines)
 
 
-async def _render_dual_maps(lat: float, lon: float, map_builder, config: dict) -> str | None:
-    """渲染 zoom4 + zoom8 双图并合并为单张 base64。"""
-    import base64, io, os
-    from PIL import Image as PILImage
-
-    msg_cfg = config.get("message_format", {})
-    try:
-        thumb_cfg = dict(msg_cfg)
-        thumb_cfg["map_zoom_level"] = 4
-        thumb_path = await map_builder.render_map_image(lat, lon, thumb_cfg)
-
-        detail_cfg = dict(msg_cfg)
-        detail_cfg["map_zoom_level"] = 8
-        detail_path = await map_builder.render_map_image(lat, lon, detail_cfg)
-
-        b64_list = []
-        for p in (thumb_path, detail_path):
-            if p and os.path.exists(p):
-                with open(p, "rb") as f:
-                    b64_list.append(base64.b64encode(f.read()).decode())
-                try:
-                    os.unlink(p)
-                except Exception:
-                    pass
-
-        if b64_list:
-            images = []
-            for b64 in b64_list:
-                buf = io.BytesIO(base64.b64decode(b64))
-                images.append(PILImage.open(buf))
-            images = [im.convert("RGB") for im in images]
-            total_h = sum(im.height for im in images)
-            max_w = max(im.width for im in images)
-            canvas = PILImage.new("RGB", (max_w, total_h), (255, 255, 255))
-            y = 0
-            for im in images:
-                canvas.paste(im, (0, y))
-                y += im.height
-            out = io.BytesIO()
-            canvas.save(out, format="PNG")
-            return base64.b64encode(out.getvalue()).decode()
-        return None
-    except Exception as e:
-        logger.warning(f"[地图] 双图渲染失败: {e}")
-        return None
-
-
 # ── 源 → 显示名映射 ──
 
 _SOURCE_DISPLAY: dict[str, str] = {
@@ -2135,20 +2088,15 @@ class MixDisasterWarningPlugin(Star):
                 yield e.plain_result(f"📡 暂无 {args} 数据")
                 return
             r = rows[0]
-            lat, lon = r.get("latitude"), r.get("longitude")
             text = _format_cea_event(r)
-            if lat is not None and lon is not None and self._map_builder:
-                try:
-                    img_b64 = await _render_dual_maps(lat, lon, self._map_builder, dict(self.config))
-                    if img_b64:
-                        yield e.chain_result([Plain(text), Image.fromBase64(img_b64)])
-                        return
-                except Exception:
-                    pass
             yield e.plain_result(text)
+            # 烈度图（EEW 不渲染地图，速度优先）
+            img = await self._cea_intensity_image(r)
+            if img:
+                yield e.image_result(img)
             return
 
-        # ── /cea → 查全国源最新 EEW（单条 + 双图） ──
+        # ── /cea → 查全国源最新 EEW（单条 + 烈度图） ──
         rows = await plan_b.query_national(5)
         if not rows:
             yield e.plain_result("📡 正在首次抓取...")
@@ -2158,17 +2106,29 @@ class MixDisasterWarningPlugin(Star):
             yield e.plain_result("📡 暂无 CEA 数据")
             return
         r = rows[0]
-        lat, lon = r.get("latitude"), r.get("longitude")
         text = _format_cea_event(r)
-        if lat is not None and lon is not None and self._map_builder:
-            try:
-                img_b64 = await _render_dual_maps(lat, lon, self._map_builder, dict(self.config))
-                if img_b64:
-                    yield e.chain_result([Plain(text), Image.fromBase64(img_b64)])
-                    return
-            except Exception:
-                pass
         yield e.plain_result(text)
+        img = await self._cea_intensity_image(r)
+        if img:
+            yield e.image_result(img)
+
+    async def _cea_intensity_image(self, r: dict) -> str | None:
+        """CEA EEW 烈度图（无地图，速度快）。"""
+        renderer = getattr(self, "_intensity_img_renderer", None)
+        if renderer is None:
+            return None
+        try:
+            mmi = r.get("mmi") or r.get("max_intensity", "")
+            if mmi:
+                return renderer.render_intensity_actual(str(mmi), "最大烈度")
+            # 没烈度时用 CSIS 估算
+            mag = r.get("magnitude")
+            depth = r.get("depth")
+            if mag is not None and depth is not None:
+                return renderer.render_intensity(float(mag), float(depth))
+        except Exception as e:
+            logger.debug(f"[CEA] 烈度图渲染失败: {e}")
+        return None
 
     @filter.regex(r"^/jma(?:\s|$)")
     async def q_jma(self, e):
