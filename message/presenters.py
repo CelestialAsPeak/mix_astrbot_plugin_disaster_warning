@@ -153,6 +153,8 @@ _EVENT_LABELS: dict[str, str] = {
     "cq_wolfx_http": "地震预警",
     "global_quake": "地震预警",
     "icl_http": "地震预警",
+    "cenc_eew_http": "地震预警",
+    "cenc_eew_province": "地震预警",
     # 地震报告源 — JMA 用 raw issue.type 动态标题，此处仅作兜底
     "jma_p2p_info": "地震情報",
     "jma_p2p_info_http": "地震情報",
@@ -201,6 +203,8 @@ _SOURCE_NAMES: dict[str, str] = {
     "tmd_http": "TMD", "geonet_http": "GeoNet",
     "nrcan_http": "NRCan", "usgs_weekly": "USGS周报",
     "snet_http": "S-net", "icl_http": "ICL",
+    "cenc_eew_http": "CEA",
+    "cenc_eew_province": "CEA-pr",
     "cenc_wolfx": "CENC", "cwa_wolfx": "CWA",
     "jma_wolfx": "JMA", "jma_p2p": "JMA",
     "jma_p2p_info": "JMA情报", "jma_wolfx_info": "JMA情报",

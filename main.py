@@ -80,7 +80,10 @@ from .parser.p2p import http_eew as p2p_http_eew, http_report as p2p_http_report
 from .parser import global_quake as gq_parser, snet as snet_parser
 from .parser.http_poll import parsers as http_poll_parsers
 from .parser.http_poll import icl_parser  # noqa: F401 — ICL 注册
+from .parser.http_poll import cenc_eew  # noqa: F401 — CEA EEW Plan B
+from .parser.http_poll import cenc_report  # noqa: F401 — CENC 报告 Plan B
 from .parser.typhoon import cma as typhoon_cma, jma as typhoon_jma
+from .services.cenc_eew_plan_b import CencEewPlanB, _CENC_SHORT_NAME
 
 
 # ── 来源简写映射（供查询命令共享） ──
@@ -131,6 +134,78 @@ def _fmt_time_short(ts: str | None) -> str:
     return s[5:] if len(s) > 10 else s
 
 
+def _format_cea_event(r: dict) -> str:
+    """格式化 CEA EEW 事件行 → 文本。"""
+    mag = r.get("magnitude", "?")
+    place = r.get("place_name", r.get("description", ""))
+    depth = r.get("depth", "?")
+    lat = r.get("latitude")
+    lon = r.get("longitude")
+    time_str = _fmt_time_short(r.get("time", ""))
+    mmi = r.get("mmi") or r.get("max_intensity", "")
+    lines = [
+        "[CEA(CAPQHT)/中国地震预警网 地震预警]",
+        _SEPARATOR,
+        _field("震中", place),
+        _field("震级", f"M{mag}"),
+        _field("深度", f"{depth} km" if depth and depth != "?" else "?"),
+        _field("发震时间", time_str),
+    ]
+    if lat is not None and lon is not None:
+        lines.append(_field("经纬度", f"{abs(float(lon)):.2f}{'E' if float(lon) >= 0 else 'W'} {abs(float(lat)):.2f}{'N' if float(lat) >= 0 else 'S'}"))
+    if mmi:
+        lines.append(_field("预估烈度", mmi))
+    lines.append(_SEPARATOR)
+    return "\n".join(lines)
+
+
+async def _render_dual_maps(lat: float, lon: float, map_builder, config: dict) -> str | None:
+    """渲染 zoom4 + zoom8 双图并合并为单张 base64。"""
+    import base64, io, os
+    from PIL import Image as PILImage
+
+    msg_cfg = config.get("message_format", {})
+    try:
+        thumb_cfg = dict(msg_cfg)
+        thumb_cfg["map_zoom_level"] = 4
+        thumb_path = await map_builder.render_map_image(lat, lon, thumb_cfg)
+
+        detail_cfg = dict(msg_cfg)
+        detail_cfg["map_zoom_level"] = 8
+        detail_path = await map_builder.render_map_image(lat, lon, detail_cfg)
+
+        b64_list = []
+        for p in (thumb_path, detail_path):
+            if p and os.path.exists(p):
+                with open(p, "rb") as f:
+                    b64_list.append(base64.b64encode(f.read()).decode())
+                try:
+                    os.unlink(p)
+                except Exception:
+                    pass
+
+        if b64_list:
+            images = []
+            for b64 in b64_list:
+                buf = io.BytesIO(base64.b64decode(b64))
+                images.append(PILImage.open(buf))
+            images = [im.convert("RGB") for im in images]
+            total_h = sum(im.height for im in images)
+            max_w = max(im.width for im in images)
+            canvas = PILImage.new("RGB", (max_w, total_h), (255, 255, 255))
+            y = 0
+            for im in images:
+                canvas.paste(im, (0, y))
+                y += im.height
+            out = io.BytesIO()
+            canvas.save(out, format="PNG")
+            return base64.b64encode(out.getvalue()).decode()
+        return None
+    except Exception as e:
+        logger.warning(f"[地图] 双图渲染失败: {e}")
+        return None
+
+
 # ── 源 → 显示名映射 ──
 
 _SOURCE_DISPLAY: dict[str, str] = {
@@ -154,6 +229,7 @@ _SOURCE_DISPLAY: dict[str, str] = {
     "tmd_http": "TMD", "geonet_http": "GeoNet",
     "nrcan_http": "NRCan", "usgs_weekly": "USGS周报",
     "bmkg_http": "BMKG",
+    "cenc_eew_http": "中国地震预警网", "cenc_eew_province": "中国地震预警网(省)",
     "snet": "S-net", "icl_http": "ICL",
     "beijing_fanstudio": "北京", "guangxi_fanstudio": "广西",
     "ningxia_fanstudio": "宁夏", "shanxi_fanstudio": "山西",
@@ -509,6 +585,17 @@ class MixDisasterWarningPlugin(Star):
 
             self._start_time = __import__("time").time()
             self._service_task = asyncio.create_task(self._run_service())
+
+            # ── CEA EEW Plan B（FAN 失能时启用） ──
+            self.plan_b = CencEewPlanB(
+                config=dict(self.config),
+                database=self.database,
+                pipeline=self.pipeline,
+                signal_bus=self.signal_bus,
+            )
+            # Plan B 默认不启动轮询，由外部控制（FAN 状态 / /cea 命令自动启用）
+            # 查询命令 (/cea /cenc) 始终可用
+
             self._setup_done = True
             logger.info("[Mix] 初始化完成")
 
@@ -547,6 +634,8 @@ class MixDisasterWarningPlugin(Star):
         # 停止融合编排器（终止 background tasks）
         if hasattr(self, '_fusion') and self._fusion:
             self._fusion.stop()
+        if hasattr(self, 'plan_b') and self.plan_b:
+            await self.plan_b.stop()
         if self.ws_manager:
             await self.ws_manager.stop_all()
         if self.http_poll_manager:
@@ -2005,7 +2094,81 @@ class MixDisasterWarningPlugin(Star):
 
     @filter.regex(r"^/cea(?:\s|$)")
     async def q_cea(self, e):
-        async for r in self._quick_query(e, "cea_fanstudio", "中国地震预警网"): yield r
+        """CEA 查询：/cea = 全国最新 /cea pr = 各省概览 /cea <省份> = 省详情。
+
+        数据源为 Plan B HTTP 轮询（独立于 FAN Studio），FAN 通断均可查。
+        """
+        raw_text = e.message_str if hasattr(e, 'message_str') else str(e.message_obj)
+        parts = raw_text.strip().split()
+        args = parts[-1].lower() if len(parts) >= 2 else ""
+
+        plan_b: CencEewPlanB | None = getattr(self, "plan_b", None)
+        if plan_b is None:
+            yield e.plain_result("❌ Plan B 未初始化")
+            return
+
+        # ── /cea pr → 各省概览 ──
+        if args == "pr":
+            rows = await plan_b.query_all_provinces()
+            if not rows:
+                yield e.plain_result("📡 暂无省网数据")
+                return
+            nodes = []
+            for r in rows:
+                raw = r.get("raw", {}) or {}
+                if isinstance(raw, str):
+                    try: import json; raw = json.loads(raw)
+                    except: raw = {}
+                app_id = raw.get("app_id", "")
+                province = _CENC_SHORT_NAME.get(app_id, "未知")
+                mag = r.get("magnitude", "?")
+                place = (r.get("place_name", "") or r.get("description", "") or "")[:15]
+                t = _fmt_time_short(r.get("time", ""))
+                nodes.append(f"  {province} M{mag} {place} ({t})")
+            yield e.plain_result("📡 省网 EEW 概览:\n" + "\n".join(nodes))
+            return
+
+        # ── /cea <省份> → 查某省 ──
+        if args and args != "cea":
+            rows = await plan_b.query_province(args, 3)
+            if not rows:
+                yield e.plain_result(f"📡 暂无 {args} 数据")
+                return
+            r = rows[0]
+            lat, lon = r.get("latitude"), r.get("longitude")
+            text = _format_cea_event(r)
+            if lat is not None and lon is not None and self._map_builder:
+                try:
+                    img_b64 = await _render_dual_maps(lat, lon, self._map_builder, dict(self.config))
+                    if img_b64:
+                        yield e.chain_result([Plain(text), Image.fromBase64(img_b64)])
+                        return
+                except Exception:
+                    pass
+            yield e.plain_result(text)
+            return
+
+        # ── /cea → 查全国源最新 EEW（单条 + 双图） ──
+        rows = await plan_b.query_national(5)
+        if not rows:
+            yield e.plain_result("📡 正在首次抓取...")
+            await plan_b.poll_national_once()
+            rows = await plan_b.query_national(5)
+        if not rows:
+            yield e.plain_result("📡 暂无 CEA 数据")
+            return
+        r = rows[0]
+        lat, lon = r.get("latitude"), r.get("longitude")
+        text = _format_cea_event(r)
+        if lat is not None and lon is not None and self._map_builder:
+            try:
+                img_b64 = await _render_dual_maps(lat, lon, self._map_builder, dict(self.config))
+                if img_b64:
+                    yield e.chain_result([Plain(text), Image.fromBase64(img_b64)])
+                    return
+            except Exception:
+                pass
+        yield e.plain_result(text)
 
     @filter.regex(r"^/jma(?:\s|$)")
     async def q_jma(self, e):

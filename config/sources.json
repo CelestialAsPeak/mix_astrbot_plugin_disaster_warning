@@ -50,7 +50,6 @@
     "institution_key": "cea",
     "institution_display_name": "CEA 中国地震预警网 EEW",
     "institution_active_name": "中国地震预警网",
-    "institution_active_name": "中国地震预警网",
     "query_group": "eew",
     "dispatch_family": "fan_studio_eew",
     "provider_source_names": [
@@ -245,8 +244,12 @@
       ]
     ],
     "payload_exclusions": [
-      ["maxIntensity"],
-      ["reportIntensity"]
+      [
+        "maxIntensity"
+      ],
+      [
+        "reportIntensity"
+      ]
     ]
   },
   "emsc_fanstudio": {
@@ -1408,6 +1411,71 @@
     "query_group": "eew",
     "metadata": {
       "legal_warning": "此数据源不得上传至任何公开仓库"
+    }
+  },
+  "cenc_eew_http": {
+    "source_id": "cenc_eew_http",
+    "source_type": "earthquake_warning",
+    "provider_family": "direct_http",
+    "parser_name": "cenc_eew_http",
+    "presentation_type": "earthquake_eew",
+    "config_group": "direct_http",
+    "config_key": "cenc_eew",
+    "priority": 5,
+    "display_name": "中国地震预警网(CEA)",
+    "description": "CENC 全国 EEW（Plan B，FAN 失效时用）",
+    "default_timezone": "Asia/Shanghai",
+    "institution_key": "cea",
+    "code_override": "CEA(CAPQHT)",
+    "institution_display_name": "中国地震预警网",
+    "institution_active_name": "中国地震预警网",
+    "query_group": "eew",
+    "metadata": {
+      "plan_b": true,
+      "note": "替代 FAN CEA EEW"
+    }
+  },
+  "cenc_eew_province": {
+    "source_id": "cenc_eew_province",
+    "source_type": "earthquake_warning",
+    "provider_family": "direct_http",
+    "parser_name": "cenc_eew_province",
+    "presentation_type": "earthquake_eew",
+    "config_group": "direct_http",
+    "config_key": "cenc_eew_province",
+    "priority": 4,
+    "display_name": "中国地震预警网省级融合源(CEA-pr)",
+    "description": "CENC 省级 EEW（Plan B，FAN 失效时用）",
+    "default_timezone": "Asia/Shanghai",
+    "institution_key": "cea",
+    "code_override": "CEA-pr",
+    "institution_display_name": "中国地震预警网省级融合源",
+    "institution_active_name": "中国地震预警网省级融合源",
+    "query_group": "eew",
+    "metadata": {
+      "plan_b": true,
+      "note": "替代 FAN CEA-PR EEW"
+    }
+  },
+  "cenc_report_http": {
+    "source_id": "cenc_report_http",
+    "source_type": "earthquake_info",
+    "provider_family": "direct_http",
+    "parser_name": "cenc_report_http",
+    "presentation_type": "earthquake_report",
+    "config_group": "direct_http",
+    "config_key": "cenc_report",
+    "priority": 5,
+    "display_name": "中国地震台网(CENC-报告)",
+    "description": "CENC 省网正式地震报告（Plan B，FAN 失效时用）",
+    "default_timezone": "Asia/Shanghai",
+    "institution_key": "cenc",
+    "code_override": "CENC-R",
+    "institution_display_name": "CENC 报告 中国地震台网",
+    "institution_active_name": "CENC 报告",
+    "query_group": "earthquake",
+    "metadata": {
+      "plan_b": true
     }
   }
 }
