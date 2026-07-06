@@ -2058,6 +2058,8 @@ class MixDisasterWarningPlugin(Star):
         parts = raw_text.strip().split()
         args = parts[-1].lower() if len(parts) >= 2 else ""
 
+        from datetime import datetime
+
         plan_b: CencEewPlanB | None = getattr(self, "plan_b", None)
         if plan_b is None:
             yield e.plain_result("❌ Plan B 未初始化")
@@ -2074,7 +2076,6 @@ class MixDisasterWarningPlugin(Star):
                     db_count = rows[0]["c"] if rows else 0
                 except Exception:
                     pass
-            from datetime import datetime
             now_str = datetime.now().strftime("%m-%d %H:%M")
             from astrbot.api.message_components import Node, Nodes
             bot_id = e.get_self_id() or "0"
