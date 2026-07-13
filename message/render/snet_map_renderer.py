@@ -3,7 +3,7 @@ message/render/snet_map_renderer.py — NIED S-Net 测站分布图渲染器（Pl
 
 用 Playwright + Canvas2D 替代 PIL：
 - TopoJSON 日本都道府県多边形（Canvas 绘制）
-- SREV SVG 震度图标（Base64 内嵌）
+- CAPQuake Qt 风格震度图标（Base64 内嵌，SREV 目录）
 - CSS 右侧面板（三栏统计 + 测站列表）
 
 移植自旧版 core/services/snet/snet_map_renderer.py
@@ -38,7 +38,7 @@ _SNET_ICON_FILES = [
     (6.5, "C7.svg"), (6.0, "C6+.svg"), (5.5, "C6-.svg"),
     (5.0, "C5+.svg"), (4.5, "C5-.svg"), (3.5, "C4.svg"),
     (2.5, "C3.svg"), (1.5, "C2.svg"), (0.5, "C1.svg"),
-    (0, "C0.svg"),   # 震度0（shindo >= 0 且 < 0.5 用这个图标）
+    (-0.5, "C0.svg"),   # 震度0（shindo >= -0.5 且 < 0.5 用这个图标）
 ]
 
 # MSIL 震度→RGB

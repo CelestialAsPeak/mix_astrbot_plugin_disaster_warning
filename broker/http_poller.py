@@ -11,6 +11,8 @@ import asyncio
 import hashlib
 from typing import Any, Callable
 
+import aiohttp
+
 try:
     from astrbot.api import logger
 except ImportError:
@@ -68,14 +70,15 @@ class HttpPoller:
         while self._running:
             try:
                 await self._fetch()
+            except asyncio.CancelledError:
+                raise
             except Exception as e:
-                logger.debug(f"[Poller:{self.name}] fetch error: {e}")
+                logger.warning(f"[Poller:{self.name}] fetch error: {e}")
 
             await asyncio.sleep(self.interval)
 
     async def _fetch(self):
         """执行 HTTP 请求。"""
-        import aiohttp
 
         if self._session is None or self._session.closed:
             # SSL 验证：None=默认, False=禁用
@@ -86,7 +89,7 @@ class HttpPoller:
                 self._session = aiohttp.ClientSession(headers=self._headers)
 
         try:
-            async with self._session.get(self.url, timeout=60) as resp:
+            async with self._session.get(self.url, timeout=aiohttp.ClientTimeout(total=60)) as resp:
                 if resp.status != 200:
                     logger.warning(f"[Poller:{self.name}] HTTP {resp.status}")
                     return

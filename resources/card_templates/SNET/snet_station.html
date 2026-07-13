@@ -321,17 +321,16 @@ var SHINDO_RGB = {
 var ICON_KEYS = [
     [6.5, 52], [6.0, 48], [5.5, 44], [5.0, 40],
     [4.5, 36], [3.5, 32], [2.5, 28], [1.5, 24], [0.5, 20],
-    [0, 16],
+    [-0.5, 16],
 ];
 
 function shindoToIconSize(sh) {
-    if (sh < 0) return 0;
-    if (sh < 0.5) return 16;
-    return 44;
+    if (sh < -0.5) return 0;
+    return 24;
 }
 
 function shindoToThreshold(sh) {
-    if (sh < 0) return null;
+    if (sh < -0.5) return null;
     for (var i = 0; i < ICON_KEYS.length; i++) {
         if (sh >= ICON_KEYS[i][0]) return ICON_KEYS[i][0];
     }
@@ -360,6 +359,18 @@ function shindoToRgb(sh) {
         if (Math.abs(keys[i] - key) < Math.abs(best - key)) best = keys[i];
     }
     return SHINDO_RGB[best] || [63, 250, 54];
+}
+
+/* ════════════════════════════════════════════
+   震度0以下灰色色点 — CAPQuake Qt 配色逻辑
+   shindo <= 0: t = clamp((shindo + 3) / 3, 0, 1)
+   gray = 80 ~ 200, alpha = 30 ~ 80
+   ════════════════════════════════════════════ */
+function shindoToGrayDot(sh) {
+    var t = Math.max(0, Math.min(1, (sh + 3.0) / 3.0));
+    var gray = Math.round(80 + t * (200 - 80));
+    var alpha = Math.round(60 + t * (110 - 60));
+    return 'rgba(' + gray + ',' + gray + ',' + gray + ',' + (alpha / 255) + ')';
 }
 
 /* ════════════════════════════════════════════
@@ -460,19 +471,15 @@ function renderMap() {
                 var hs = iconSize / 2;
                 ctx.drawImage(icon, xy[0] - hs, xy[1] - hs, iconSize, iconSize);
             } else {
-                var rgb = shindoToRgb(sh);
-                var r = 6
                 ctx.beginPath();
-                ctx.arc(xy[0], xy[1], r, 0, Math.PI * 2);
-                ctx.fillStyle = 'rgb(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ')';
+                ctx.arc(xy[0], xy[1], 6, 0, Math.PI * 2);
+                ctx.fillStyle = shindoToGrayDot(sh);
                 ctx.fill();
             }
         } else {
-            var rgb = shindoToRgb(sh);
-            var r = 6
             ctx.beginPath();
-            ctx.arc(xy[0], xy[1], r, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgb(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ')';
+            ctx.arc(xy[0], xy[1], 6, 0, Math.PI * 2);
+            ctx.fillStyle = shindoToGrayDot(sh);
             ctx.fill();
         }
 
